@@ -81,7 +81,7 @@ export class SoundEngine {
     } catch (_) {}
   }
 
-  public playWinchTick(speedRatio: number): void {
+  public playWinchTick(speedRatio: number = 1.0): void {
     if (this.muted || !this.ctx) return;
     const now = performance.now();
     const interval = Math.max(55, 210 - speedRatio * 130);

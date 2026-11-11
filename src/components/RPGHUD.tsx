@@ -18,7 +18,12 @@ export const RPGHUD: React.FC<RPGHUDProps> = ({
   onMoveInput,
 }) => {
   // Only active during exploration (HOTEL, TOWN, MINE_EXTERIOR)
-  if (state.screen === 'MINING' || state.screen === 'BLASTING' || state.screen === 'SHOP') {
+  if (
+    state.screen === 'HOME' ||
+    state.screen === 'MINING' ||
+    state.screen === 'BLASTING' ||
+    state.screen === 'SHOP'
+  ) {
     return null;
   }
 
@@ -194,3 +199,4 @@ export const RPGHUD: React.FC<RPGHUDProps> = ({
     </div>
   );
 };
+

@@ -405,3 +405,4 @@ export class WorldBuilder {
     this.blastingGroup.add(dynamiteBundle);
   }
 }
+

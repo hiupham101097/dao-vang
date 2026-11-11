@@ -39,23 +39,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     // Pointer events
     const handlePointerDown = (e: PointerEvent) => {
       if (!engineRef.current) return;
-
-      if (engineRef.current.state === 'MINING') {
-        if (e.button === 2) {
-          engineRef.current.tryUseDynamite();
-        } else {
-          engineRef.current.launchHook();
-        }
-      } else if (
-        engineRef.current.state === 'HOTEL' ||
-        engineRef.current.state === 'TOWN' ||
-        engineRef.current.state === 'MINE_EXTERIOR'
-      ) {
-        // If an interaction prompt is active and user clicked, trigger it!
-        if (engineRef.current.activePrompt) {
-          engineRef.current.interactCurrentPrompt();
-        }
-      }
+      engineRef.current.handlePointerDown(e);
     };
 
     const containerEl = containerRef.current;
@@ -125,7 +109,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 w-full h-full z-0 cursor-crosshair overflow-hidden"
+      className="absolute inset-0 w-full h-full z-0 cursor-crosshair overflow-hidden flex items-center justify-center bg-[#0a0705]"
     />
   );
 };

@@ -8,9 +8,10 @@ import { HUD } from './components/HUD';
 import { ShopModal } from './components/ShopModal';
 import { BlastingModal } from './components/BlastingModal';
 import { GuideModal } from './components/GuideModal';
+import { HomeScreen } from './components/HomeScreen';
 
 const initialSnapshot: GameStateSnapshot = {
-  screen: 'HOTEL',
+  screen: 'HOME',
   level: 1,
   walletGold: 500,
   targetScore: 1050,
@@ -24,13 +25,13 @@ const initialSnapshot: GameStateSnapshot = {
   },
   canUseDynamite: false,
   canFinishEarly: false,
-  minerSpeech: '👨‍🏭 "Chào buổi sáng! Hãy rời khách sạn ra thị trấn chuẩn bị đồ nghề."',
+  minerSpeech: '👨‍🏭 "Chào mừng đến với Đào Vàng HD! Nhấn Bắt Đầu để xuất hiện tại khách sạn."',
   isMuted: false,
   lastResultPassed: true,
   highScore: 500,
-  currentZoneName: '🏨 Khách Sạn Thợ Mỏ',
+  currentZoneName: 'Sảnh Khởi Hành',
   interactionPrompt: null,
-  questText: 'Rời khách sạn để bước ra thị trấn',
+  questText: 'Nhấn Bắt Đầu để xuất hiện tại khách sạn',
 };
 
 export const App: React.FC = () => {
@@ -102,6 +103,15 @@ export const App: React.FC = () => {
         onEngineReady={handleEngineReady}
         onStateChange={handleStateChange}
         onFloatingPopup={handleFloatingPopup}
+      />
+
+      {/* Home Screen with Start Adventure Button */}
+      <HomeScreen
+        state={gameState}
+        onPlay={() => engineRef.current?.setZone('HOTEL')}
+        onOpenShop={() => engineRef.current?.setZone('SHOP')}
+        onOpenGuide={() => setIsGuideOpen(true)}
+        onToggleAudio={handleToggleAudio}
       />
 
       {/* Floating 2D In-Game Popups */}

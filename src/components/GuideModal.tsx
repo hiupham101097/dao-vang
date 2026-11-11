@@ -15,7 +15,7 @@ export const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
         <div className="flex items-center justify-between pb-3 border-b border-stone-700">
           <div className="flex items-center gap-2 text-amber-300">
             <BookOpen className="w-5 h-5 text-amber-400" />
-            <h3 className="font-display text-xl font-extrabold">BẢNG GIÁ KHOÁNG SẢN 3D</h3>
+            <h3 className="font-display text-xl font-extrabold">BẢNG GIÁ KHOÁNG SẢN 720P HD</h3>
           </div>
           <button
             onClick={onClose}
@@ -30,7 +30,7 @@ export const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
             <span className="text-3xl">🪙</span>
             <div>
               <div className="text-xs font-bold text-amber-300">Vàng Nguyên Khối</div>
-              <div className="text-[11px] text-stone-400">$100 / $250 / $500</div>
+              <div className="text-[11px] text-stone-400">$50 / $250 / $500</div>
             </div>
           </div>
 
@@ -38,7 +38,7 @@ export const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
             <span className="text-3xl">💎</span>
             <div>
               <div className="text-xs font-bold text-cyan-300">Kim Cương Tinh Khiết</div>
-              <div className="text-[11px] text-stone-400">$650 • Nhẹ, kéo nhanh</div>
+              <div className="text-[11px] text-stone-400">$600 • Nhẹ, kéo nhanh</div>
             </div>
           </div>
 
@@ -46,7 +46,7 @@ export const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
             <span className="text-3xl">🪨</span>
             <div>
               <div className="text-xs font-bold text-stone-300">Đá Trầm Tích</div>
-              <div className="text-[11px] text-stone-400">$25 - $60 • Rất nặng</div>
+              <div className="text-[11px] text-stone-400">$20 - $45 • Rất nặng</div>
             </div>
           </div>
 
@@ -66,7 +66,7 @@ export const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
                 <AlertTriangle className="w-3.5 h-3.5" />
               </div>
               <div className="text-[11px] text-stone-400">
-                Gắp trúng sẽ phát nổ 3D phá hủy toàn bộ các vật thể xung quanh trong bán kính R!
+                Gắp trúng sẽ phát nổ lan rộng phá hủy toàn bộ các chướng ngại vật xung quanh!
               </div>
             </div>
           </div>
