@@ -3,14 +3,14 @@ import { GoldMinerEngine } from './game/core/GoldMinerEngine';
 import { FloatingPopupItem, GameStateSnapshot } from './game/types';
 import { GameCanvas } from './components/GameCanvas';
 import { FloatingPopups } from './components/FloatingPopups';
+import { RPGHUD } from './components/RPGHUD';
 import { HUD } from './components/HUD';
-import { HomeScreen } from './components/HomeScreen';
 import { ShopModal } from './components/ShopModal';
+import { BlastingModal } from './components/BlastingModal';
 import { GuideModal } from './components/GuideModal';
-import { ResultModal } from './components/ResultModal';
 
 const initialSnapshot: GameStateSnapshot = {
-  screen: 'HOME',
+  screen: 'HOTEL',
   level: 1,
   walletGold: 500,
   targetScore: 1050,
@@ -24,10 +24,13 @@ const initialSnapshot: GameStateSnapshot = {
   },
   canUseDynamite: false,
   canFinishEarly: false,
-  minerSpeech: '👨‍🏭 Ông Thợ Mỏ: "Chào mừng bạn! Sẵn sàng đào kho báu chưa?"',
+  minerSpeech: '👨‍🏭 "Chào buổi sáng! Hãy rời khách sạn ra thị trấn chuẩn bị đồ nghề."',
   isMuted: false,
   lastResultPassed: true,
   highScore: 500,
+  currentZoneName: '🏨 Khách Sạn Thợ Mỏ',
+  interactionPrompt: null,
+  questText: 'Rời khách sạn để bước ra thị trấn',
 };
 
 export const App: React.FC = () => {
@@ -51,19 +54,20 @@ export const App: React.FC = () => {
     }, 1450);
   }, []);
 
-  // UI Actions
-  const handlePlay = useCallback(() => {
-    engineRef.current?.startPureGameplay();
+  // Exploration Actions
+  const handleInteract = useCallback(() => {
+    engineRef.current?.interactCurrentPrompt();
   }, []);
 
-  const handleOpenShop = useCallback(() => {
-    engineRef.current?.openShopScreen();
+  const handleFastTravel = useCallback((zone: 'HOTEL' | 'TOWN' | 'MINE_EXTERIOR' | 'MINING') => {
+    engineRef.current?.setZone(zone);
   }, []);
 
-  const handleCloseShop = useCallback(() => {
-    engineRef.current?.goToHomeScreen();
+  const handleMoveInput = useCallback((dx: number, dz: number) => {
+    engineRef.current?.setMoveInput(dx, dz);
   }, []);
 
+  // Mining Arcade Actions
   const handleLaunchHook = useCallback(() => {
     engineRef.current?.launchHook();
   }, []);
@@ -73,11 +77,11 @@ export const App: React.FC = () => {
   }, []);
 
   const handleFinishEarly = useCallback(() => {
-    engineRef.current?.finishLevel();
+    engineRef.current?.finishMiningLevel();
   }, []);
 
-  const handleBackHome = useCallback(() => {
-    engineRef.current?.goToHomeScreen();
+  const handleBackToTown = useCallback(() => {
+    engineRef.current?.setZone('TOWN');
   }, []);
 
   const handleToggleAudio = useCallback(() => {
@@ -91,53 +95,54 @@ export const App: React.FC = () => {
     []
   );
 
-  const handleNextOrRetry = useCallback(() => {
-    engineRef.current?.startPureGameplay();
-  }, []);
-
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-[#080604] select-none font-sans">
-      {/* 3D Three.js Engine Canvas */}
+    <div className="relative w-screen h-screen overflow-hidden bg-[#0a0705] select-none font-sans">
+      {/* 3D World Scene Canvas */}
       <GameCanvas
         onEngineReady={handleEngineReady}
         onStateChange={handleStateChange}
         onFloatingPopup={handleFloatingPopup}
       />
 
-      {/* Floating 2D In-Game Popups (Scores, TNT, Clover bonuses) */}
+      {/* Floating 2D In-Game Popups */}
       <FloatingPopups popups={popups} />
 
-      {/* Game Screens & Modals */}
-      <HomeScreen
+      {/* RPG Exploration HUD (Hotel, Town, Mine Exterior) */}
+      <RPGHUD
         state={gameState}
-        onPlay={handlePlay}
-        onOpenShop={handleOpenShop}
-        onOpenGuide={() => setIsGuideOpen(true)}
+        onInteract={handleInteract}
+        onFastTravel={handleFastTravel}
         onToggleAudio={handleToggleAudio}
+        onMoveInput={handleMoveInput}
       />
 
+      {/* Arcade Mining Machine HUD (Underground Hook Minigame) */}
       <HUD
         state={gameState}
         onLaunchHook={handleLaunchHook}
         onUseDynamite={handleUseDynamite}
         onFinishEarly={handleFinishEarly}
-        onBackHome={handleBackHome}
+        onBackHome={handleBackToTown}
       />
 
+      {/* General Store Modal (Inside Town Shop) */}
       <ShopModal
         state={gameState}
         onBuyItem={handleBuyItem}
-        onCloseToHome={handleCloseShop}
-        onStartGame={handlePlay}
+        onCloseToHome={() => engineRef.current?.setZone('TOWN')}
+        onStartGame={() => engineRef.current?.setZone('MINING')}
       />
 
-      <ResultModal
+      {/* Mountain Blasting Sequence Modal (When Level is Cleared) */}
+      <BlastingModal
         state={gameState}
-        onGoToShop={handleOpenShop}
-        onNextOrRetry={handleNextOrRetry}
-        onGoHome={handleBackHome}
+        blastCountdown={engineRef.current?.blastCountdown || 0}
+        onEnterNewMine={() => engineRef.current?.setZone('MINING')}
+        onGoToTown={() => engineRef.current?.setZone('TOWN')}
+        onGoToHotel={() => engineRef.current?.setZone('HOTEL')}
       />
 
+      {/* Mineral Guide Modal */}
       <GuideModal
         isOpen={isGuideOpen}
         onClose={() => setIsGuideOpen(false)}
@@ -147,4 +152,3 @@ export const App: React.FC = () => {
 };
 
 export default App;
-

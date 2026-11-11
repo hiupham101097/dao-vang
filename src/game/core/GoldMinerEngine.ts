@@ -4,9 +4,10 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
-import { ActiveBuffs, FloatingPopupItem, GameScreen, GameStateSnapshot, ItemType } from '../types';
+import { ActiveBuffs, FloatingPopupItem, GameScreen, GameStateSnapshot, InteractionPrompt, ItemType } from '../types';
 import { SoundEngine } from '../audio/SoundEngine';
-import { PBRTextureGenerator } from '../gfx/PBRTextureGenerator';
+import { WorldBuilder } from '../world/WorldBuilder';
+import { PlayerAvatar } from '../entities/PlayerAvatar';
 import { MinerCharacter3D } from '../entities/MinerCharacter3D';
 import { Item3DFactory } from '../entities/Item3DFactory';
 import { VFXPoolManager } from '../gfx/VFXPoolManager';
@@ -17,28 +18,31 @@ export class GoldMinerEngine {
   private container: HTMLElement;
   public sound: SoundEngine;
 
-  // Scene & Rendering
-  private scene!: THREE.Scene;
-  private camera!: THREE.PerspectiveCamera;
+  // Three.js Core
+  public scene!: THREE.Scene;
+  public camera!: THREE.PerspectiveCamera;
   private renderer!: THREE.WebGLRenderer;
   private composer!: EffectComposer;
   private bloomPass!: UnrealBloomPass;
   private clock: THREE.Clock = new THREE.Clock();
   private animFrameId: number | null = null;
 
-  // Game Entities & Subsystems
-  private minerCharacter!: MinerCharacter3D;
-  private itemFactory!: Item3DFactory;
-  private vfxPool!: VFXPoolManager;
-  private cameraDirector!: CameraDirector;
+  // World & Entities
+  public worldBuilder!: WorldBuilder;
+  public playerAvatar!: PlayerAvatar;
   public hookController!: HookController;
+  public minerCharacter!: MinerCharacter3D;
+  private itemFactory!: Item3DFactory;
+  public vfxPool!: VFXPoolManager;
+  public cameraDirector!: CameraDirector;
 
-  // Lights & Dynamic FX
-  private lanternLights: THREE.PointLight[] = [];
+  // Dynamic Lighting
+  private ambientCavernLight!: THREE.HemisphereLight;
+  private mainSunLight!: THREE.DirectionalLight;
   private explosionFlashLight!: THREE.PointLight;
 
-  // State Management
-  public state: GameScreen = 'HOME';
+  // Game State
+  public state: GameScreen = 'HOTEL';
   public level: number = 1;
   public walletGold: number = 500;
   public targetScore: number = 1050;
@@ -50,13 +54,20 @@ export class GoldMinerEngine {
     polish: false,
     magnet: false,
   };
-  public minerSpeech: string = '👨‍🏭 Ông Thợ Mỏ: "Chào mừng bạn! Sẵn sàng đào kho báu chưa?"';
+  public minerSpeech: string = '👨‍🏭 "Chào buổi sáng! Hãy rời khách sạn ra thị trấn chuẩn bị đồ nghề."';
   public lastResultPassed: boolean = true;
   public highScore: number = 500;
+  public currentZoneName: string = 'Khách Sạn Thợ Mỏ';
+  public questText: string = 'Rời khỏi khách sạn để ra thị trấn';
+  public activePrompt: InteractionPrompt | null = null;
+
+  // RPG Movement Inputs
+  public moveInputState = { dx: 0, dz: 0 };
+  public blastCountdown: number = 0;
 
   public worldItems: THREE.Group[] = [];
 
-  // Callback to React
+  // React Callbacks
   private onStateChange?: (snapshot: GameStateSnapshot) => void;
   private onFloatingPopup?: (popup: FloatingPopupItem) => void;
   private popupSeq: number = 0;
@@ -77,14 +88,20 @@ export class GoldMinerEngine {
     }
 
     this.initThreePBRScene();
-    this.buildOpenTopMineEnvironment3D();
 
-    // Create 3D Miner Character sitting on cart at (0, 3.6, -0.35)
-    this.minerCharacter = new MinerCharacter3D(this.scene, new THREE.Vector3(0, 3.6, -0.35));
+    // 1. Build the 3D World (Hotel, Town, Mine Exterior, Cavern, Blasting Area)
+    this.worldBuilder = new WorldBuilder(this.scene);
 
-    this.itemFactory = new Item3DFactory();
+    // 2. Build the Walking 3D Player Avatar for exploration
+    this.playerAvatar = new PlayerAvatar(this.scene);
+
+    // 3. Subsystems
     this.vfxPool = new VFXPoolManager(this.scene);
     this.cameraDirector = new CameraDirector(this.camera);
+    this.itemFactory = new Item3DFactory();
+
+    // 4. Miner character and Hook Crane for underground mining
+    this.minerCharacter = new MinerCharacter3D(this.scene, new THREE.Vector3(0, 3.6, -0.35));
     this.hookController = new HookController(
       this.scene,
       this.vfxPool,
@@ -94,8 +111,9 @@ export class GoldMinerEngine {
       (item) => this.handleItemScored(item)
     );
 
+    // Start in the Hotel!
+    this.setZone('HOTEL');
     this.spawnLevelItems(1);
-    this.emitState();
 
     this.animate = this.animate.bind(this);
     this.animFrameId = requestAnimationFrame(this.animate);
@@ -107,10 +125,9 @@ export class GoldMinerEngine {
     const pr = Math.min(window.devicePixelRatio || 1, 2);
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x140e0a);
-    this.scene.fog = new THREE.FogExp2(0x140e0a, 0.004);
+    this.scene.background = new THREE.Color(0x1a120c);
 
-    this.camera = new THREE.PerspectiveCamera(46, width / height, 0.5, 120);
+    this.camera = new THREE.PerspectiveCamera(50, width / height, 0.5, 140);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setSize(width, height);
@@ -121,11 +138,9 @@ export class GoldMinerEngine {
     this.renderer.toneMappingExposure = 1.35;
     this.container.appendChild(this.renderer.domElement);
 
-    // PMREM Environment Map for realistic Gold & Metallic reflections
     const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
 
-    // High-Resolution UnrealBloomPass Post-Processing
     this.composer = new EffectComposer(this.renderer);
     this.composer.setPixelRatio(pr);
     this.composer.setSize(width, height);
@@ -133,134 +148,113 @@ export class GoldMinerEngine {
 
     this.bloomPass = new UnrealBloomPass(new THREE.Vector2(width * pr, height * pr), 0.32, 0.25, 0.88);
     this.composer.addPass(this.bloomPass);
+
+    // Scene lights
+    this.ambientCavernLight = new THREE.HemisphereLight(0xfff8ee, 0x3d2719, 1.4);
+    this.scene.add(this.ambientCavernLight);
+
+    this.mainSunLight = new THREE.DirectionalLight(0xfff6dd, 2.2);
+    this.mainSunLight.position.set(10, 18, 12);
+    this.mainSunLight.castShadow = true;
+    this.scene.add(this.mainSunLight);
+
+    this.explosionFlashLight = new THREE.PointLight(0xff4500, 0, 45);
+    this.explosionFlashLight.position.set(0, 0, 3);
+    this.scene.add(this.explosionFlashLight);
   }
 
-  private buildOpenTopMineEnvironment3D(): void {
-    const stoneBump = PBRTextureGenerator.createStoneBumpMap();
-    stoneBump.repeat.set(6, 4);
+  /**
+   * Set Zone & Seamlessly Transition Character, Camera, and World
+   */
+  public setZone(zone: GameScreen): void {
+    this.state = zone;
+    this.worldBuilder.setVisibleZone(
+      zone === 'SHOP' ? 'TOWN' : (zone as 'HOTEL' | 'TOWN' | 'MINE_EXTERIOR' | 'MINING' | 'BLASTING')
+    );
 
-    // 1. Cavern Lighting Setup (Crisp, High-Contrast Visibility)
-    const hemiLight = new THREE.HemisphereLight(0xfffbeb, 0x3d2719, 1.4);
-    this.scene.add(hemiLight);
+    // Hide Crane & Miner seated atop the cart unless MINING
+    const isMining = zone === 'MINING';
+    this.hookController.cartGroup.visible = isMining;
+    this.hookController.pivotGroup.visible = isMining;
+    this.minerCharacter.root.visible = isMining;
+    this.worldItems.forEach((it) => (it.visible = isMining));
 
-    // Dedicated Bright Key Light on the 3D Miner Character & Crane
-    const minerKeyLight = new THREE.SpotLight(0xfff6dd, 8.5, 26, Math.PI / 2.5, 0.32, 1);
-    minerKeyLight.position.set(0, 8.8, 7.2);
-    minerKeyLight.target.position.set(0, 4.2, 0);
-    this.scene.add(minerKeyLight);
-    this.scene.add(minerKeyLight.target);
+    // Show walking player avatar in exploration zones
+    this.playerAvatar.root.visible = !isMining && zone !== 'BLASTING';
 
-    // Main Sunlight
-    const dirLight = new THREE.DirectionalLight(0xfffaea, 2.0);
-    dirLight.position.set(6, 16, 14);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.width = 1024;
-    dirLight.shadow.mapSize.height = 1024;
-    const d = 18;
-    dirLight.shadow.camera.left = -d;
-    dirLight.shadow.camera.right = d;
-    dirLight.shadow.camera.top = d;
-    dirLight.shadow.camera.bottom = -d;
-    this.scene.add(dirLight);
+    if (zone === 'HOTEL') {
+      this.currentZoneName = '🏨 Khách Sạn Thợ Mỏ';
+      this.questText = 'Rời khách sạn để bước ra thị trấn';
+      this.setMinerSpeech('👨‍🏭 "Chào buổi sáng! Hãy rời khách sạn ra thị trấn chuẩn bị đồ nghề."');
+      this.playerAvatar.setPosition(-1.5, 0, -1.0, 0);
 
-    // Underground Cavern Floodlights: Illuminates minerals clearly from both flanks
-    const cavernLeftLight = new THREE.PointLight(0xfffae6, 3.8, 22);
-    cavernLeftLight.position.set(-6.0, -4.5, 4.8);
-    this.scene.add(cavernLeftLight);
+      // Camera view inside the cozy hotel
+      this.camera.position.set(0, 6.2, -7.2);
+      this.camera.lookAt(0, 1.2, 0);
+      this.camera.fov = 46;
+      this.camera.updateProjectionMatrix();
+    } else if (zone === 'TOWN') {
+      this.sound.playDoor();
+      this.currentZoneName = '🏘️ Thị Trấn Thợ Mỏ Miền Tây';
+      this.questText = 'Vào Cửa Hàng mua trang bị hoặc Đi bộ ra Mỏ Vàng';
+      this.setMinerSpeech('👨‍🏭 "Thị trấn tấp nập! Ghé Cửa Hàng mua Thuốc nổ TNT rồi ra Mỏ Vàng nhé."');
+      this.playerAvatar.setPosition(0, 0, -9.5, 0);
 
-    const cavernRightLight = new THREE.PointLight(0xfffae6, 3.8, 22);
-    cavernRightLight.position.set(6.0, -4.5, 4.8);
-    this.scene.add(cavernRightLight);
+      // Camera view framing the town street
+      this.camera.position.set(0, 8.5, -18.0);
+      this.camera.lookAt(0, 2.0, 0);
+      this.camera.fov = 48;
+      this.camera.updateProjectionMatrix();
+    } else if (zone === 'SHOP') {
+      this.currentZoneName = '🏪 Cửa Hàng Vật Phẩm Thợ Mỏ';
+      this.questText = 'Mua sắm trang bị cần thiết trước khi xuống mỏ';
+      this.setMinerSpeech('🛍️ Chủ quán: "Cần Thuốc Nổ hay Nước Tăng Lực không bác thợ mỏ ơi?"');
+    } else if (zone === 'MINE_EXTERIOR') {
+      this.currentZoneName = '⛰️ Lối Vào Mỏ Vàng';
+      this.questText = 'Tiến vào cửa hầm mỏ để vận hành máy đào';
+      this.setMinerSpeech('👨‍🏭 "Đã tới cửa mỏ vàng! Tiến vào trong cửa hầm nào."');
+      this.playerAvatar.setPosition(0, 0, -6.5, 0);
 
-    const cavernFrontLight = new THREE.DirectionalLight(0xfff3db, 1.3);
-    cavernFrontLight.position.set(0, 2, 10);
-    this.scene.add(cavernFrontLight);
+      this.camera.position.set(0, 7.5, -14.5);
+      this.camera.lookAt(0, 2.8, 3.5);
+      this.camera.fov = 48;
+      this.camera.updateProjectionMatrix();
+    } else if (zone === 'MINING') {
+      this.sound.playDoor();
+      this.currentZoneName = `⛏️ Lòng Mỏ Vàng (Màn ${this.level})`;
+      this.questText = `Đào vàng đạt chỉ tiêu $${this.targetScore.toLocaleString()}!`;
+      this.setMinerSpeech('👨‍🏭 "Đã ngồi vào Máy Đào! Nhấn Chuột hoặc Space để phóng móc câu!"');
+      this.hookController.resetHook();
 
-    // Explosion Flash Light
-    this.explosionFlashLight = new THREE.PointLight(0xff4500, 0, 35);
-    this.explosionFlashLight.position.set(0, -3, 3);
-    this.scene.add(this.explosionFlashLight);
+      // Perfectly framed rock-solid mining arcade camera
+      this.cameraDirector.setMode('PLAYING');
+      this.remainingTime = 60;
+    } else if (zone === 'BLASTING') {
+      this.currentZoneName = '💥 Khu Vực Phá Núi Mở Mỏ';
+      this.questText = 'Chuẩn bị kích nổ thuốc nổ phá núi mở tầng mỏ mới!';
+      this.blastCountdown = 3.2;
+      this.camera.position.set(0, 0.5, 8.5);
+      this.camera.lookAt(0, 0, 0);
+      this.camera.fov = 44;
+      this.camera.updateProjectionMatrix();
+    }
 
-    // 2. Heavy Timber Mine Arch & Lanterns
-    const timberMat = new THREE.MeshStandardMaterial({ color: 0x4a240c, roughness: 0.85 });
-    [-5.2, 5.2].forEach((xPillar) => {
-      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.65, 4.2, 0.75), timberMat);
-      pillar.position.set(xPillar, 4.8, 0);
-      pillar.castShadow = true;
-      this.scene.add(pillar);
+    this.emitState();
+  }
 
-      // Hanging Brass Cavern Lantern
-      const lanternMesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.16, 0.22, 0.42, 12),
-        new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.85, roughness: 0.2 })
-      );
-      lanternMesh.position.set(xPillar * 0.85, 5.6, 0.6);
-      this.scene.add(lanternMesh);
+  public interactCurrentPrompt(): void {
+    if (this.activePrompt) {
+      this.sound.playClick();
+      this.activePrompt.onTrigger();
+    }
+  }
 
-      const pLight = new THREE.PointLight(0xffa500, 3.2, 12.0);
-      pLight.position.copy(lanternMesh.position);
-      this.scene.add(pLight);
-      this.lanternLights.push(pLight);
-    });
-
-    const crossBeam = new THREE.Mesh(new THREE.BoxGeometry(11.2, 0.65, 0.8), timberMat);
-    crossBeam.position.set(0, 6.7, 0);
-    this.scene.add(crossBeam);
-
-    // Ground Platform at y = 3.6
-    const groundGeom = new THREE.BoxGeometry(24, 1.4, 10);
-    const groundMat = new THREE.MeshStandardMaterial({
-      color: 0x2b1d14,
-      roughness: 0.88,
-      bumpMap: stoneBump,
-      bumpScale: 0.16,
-    });
-    const ground = new THREE.Mesh(groundGeom, groundMat);
-    ground.position.set(0, 2.9, 0);
-    ground.receiveShadow = true;
-    this.scene.add(ground);
-
-    // Cavern Side Rock Walls: Defines the boundaries clearly
-    const sideWallMat = new THREE.MeshStandardMaterial({
-      color: 0x241810,
-      roughness: 0.92,
-      bumpMap: stoneBump,
-      bumpScale: 0.35,
-    });
-
-    [-6.8, 6.8].forEach((xWall) => {
-      const sideWall = new THREE.Mesh(new THREE.BoxGeometry(2.0, 18, 8), sideWallMat);
-      sideWall.position.set(xWall, -4.0, 0);
-      sideWall.receiveShadow = true;
-      this.scene.add(sideWall);
-    });
-
-    // Subterranean Cavern Back Wall
-    const backWallGeom = new THREE.PlaneGeometry(28, 20);
-    const backWallMat = new THREE.MeshStandardMaterial({
-      color: 0x1a120c,
-      roughness: 0.94,
-      bumpMap: stoneBump,
-      bumpScale: 0.32,
-    });
-    const backWall = new THREE.Mesh(backWallGeom, backWallMat);
-    backWall.position.set(0, -4.5, -2.5);
-    backWall.receiveShadow = true;
-    this.scene.add(backWall);
-
-    // Mine Shaft Steel Rails
-    [-0.75, 0.75].forEach((zOff) => {
-      const rail = new THREE.Mesh(
-        new THREE.BoxGeometry(24, 0.12, 0.1),
-        new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.92, roughness: 0.22 })
-      );
-      rail.position.set(0, 3.65, zOff);
-      this.scene.add(rail);
-    });
+  public setMoveInput(dx: number, dz: number): void {
+    this.moveInputState.dx = dx;
+    this.moveInputState.dz = dz;
   }
 
   public spawnLevelItems(levelNum: number): void {
-    // Clear existing items
     this.worldItems.forEach((item) => this.scene.remove(item));
     this.worldItems = [];
 
@@ -278,22 +272,7 @@ export class GoldMinerEngine {
         { type: 'TNT', x: 0.0, y: -5.2 },
         { type: 'GOLD_SMALL', x: 0.4, y: -7.5 }
       );
-    } else if (levelNum === 2) {
-      configs.push(
-        { type: 'GOLD_LARGE', x: -3.8, y: -4.8 },
-        { type: 'GOLD_LARGE', x: 3.8, y: -5.2 },
-        { type: 'DIAMOND', x: -5.0, y: -7.2 },
-        { type: 'DIAMOND', x: 4.8, y: -7.0 },
-        { type: 'MYSTERY_BAG', x: -1.8, y: -3.5 },
-        { type: 'MYSTERY_BAG', x: 1.8, y: -3.5 },
-        { type: 'TNT', x: -2.8, y: -6.0 },
-        { type: 'TNT', x: 2.8, y: -6.0 },
-        { type: 'ROCK_LARGE', x: 0.0, y: -4.0 },
-        { type: 'ROCK_SMALL', x: -4.2, y: -2.5 },
-        { type: 'GOLD_MEDIUM', x: 0.0, y: -7.2 }
-      );
     } else {
-      // Procedural level scaling
       const count = 9 + Math.min(6, levelNum);
       const types: ItemType[] = [
         'GOLD_SMALL',
@@ -305,7 +284,6 @@ export class GoldMinerEngine {
         'MYSTERY_BAG',
         'TNT',
       ];
-
       for (let i = 0; i < count; i++) {
         const randType = types[Math.floor(Math.random() * types.length)];
         const rx = (Math.random() - 0.5) * 10.5;
@@ -327,7 +305,7 @@ export class GoldMinerEngine {
     const pos = tntItem.position.clone();
     this.vfxPool.spawnVFX('TNTExplosion', pos);
     this.sound.playExplosion();
-    this.cameraDirector.triggerShake(0.8, 0.55);
+    this.cameraDirector.triggerShake(0.55, 0.35);
 
     this.explosionFlashLight.position.copy(pos);
     this.explosionFlashLight.intensity = 8.5;
@@ -336,7 +314,7 @@ export class GoldMinerEngine {
     if (idx !== -1) this.worldItems.splice(idx, 1);
     this.scene.remove(tntItem);
 
-    const radius = tntItem.userData.explosionRadius || 3.8;
+    const radius = tntItem.userData.explosionRadius || 4.2;
     const victims = this.worldItems.filter((it) => it.position.distanceTo(pos) <= radius);
 
     victims.forEach((victim) => {
@@ -387,102 +365,47 @@ export class GoldMinerEngine {
 
     this.sound.playCoin(reward);
     this.minerCharacter.triggerCheer();
-    this.setMinerSpeech(`👨‍🏭 Ông Thợ Mỏ: "Tuyệt vời! Thu về +$${reward}!"`);
+    this.setMinerSpeech(`👨‍🏭 "Tuyệt vời! Kéo thành công, thu về +$${reward}!"`);
 
-    // Emit 2D screen coordinate floating popup
     this.emitFloatingPopup(new THREE.Vector3(0, 4.2, 0), popupText, popupColor);
     this.emitState();
 
     if (this.worldItems.length === 0) {
-      this.finishLevel();
+      this.finishMiningLevel();
     }
   }
 
-  public emitFloatingPopup(worldPos: THREE.Vector3, text: string, color: string = '#fde047'): void {
-    if (!this.onFloatingPopup) return;
-    const v = worldPos.clone().project(this.camera);
-    const width = this.container.clientWidth || window.innerWidth;
-    const height = this.container.clientHeight || window.innerHeight;
-
-    const x = (v.x * 0.5 + 0.5) * width;
-    const y = (-(v.y * 0.5) + 0.5) * height;
-
-    this.popupSeq++;
-    this.onFloatingPopup({
-      id: this.popupSeq,
-      text,
-      color,
-      x,
-      y,
-    });
-  }
-
-  public setMinerSpeech(text: string): void {
-    this.minerSpeech = text;
-    this.emitState();
-  }
-
-  public startPureGameplay(): void {
-    this.sound.init();
-    this.state = 'PLAYING';
-    this.remainingTime = 60;
-    if (this.level === 1 && this.targetScore < 900) {
-      this.targetScore = 1050;
-    }
-
-    this.hookController.resetHook();
-    this.cameraDirector.setMode('PLAYING');
-    this.setMinerSpeech('👨‍🏭 Ông Thợ Mỏ: "Nhấn Chuột hoặc Phím Space để phóng móc!"');
-    this.emitState();
-  }
-
-  public goToHomeScreen(): void {
-    this.state = 'HOME';
-    this.hookController.resetHook();
-    this.cameraDirector.setMode('HOME');
-    this.emitState();
-  }
-
-  public openShopScreen(): void {
-    this.sound.init();
-    this.state = 'SHOP';
-    this.hookController.resetHook();
-    this.cameraDirector.setMode('HOME');
-    this.emitState();
-  }
-
-  public finishLevel(): void {
+  public finishMiningLevel(): void {
     this.hookController.resetHook();
     const passed = this.walletGold >= this.targetScore;
     this.lastResultPassed = passed;
 
-    // Clear single-level buffs
     this.buffs = { strength: false, clover: false, polish: false, magnet: false };
-    this.state = 'RESULT';
 
     if (passed) {
-      this.level++;
-      this.targetScore = Math.floor(this.walletGold + 650 + this.level * 220);
-      this.spawnLevelItems(this.level);
+      // Transition to mountain blasting scene!
+      this.setZone('BLASTING');
     } else {
+      this.setMinerSpeech('👨‍🏭 "Tiếc quá, chưa đủ chỉ tiêu! Hãy về khách sạn nghỉ ngơi và thử lại từ Màn 1."');
       this.level = 1;
       this.walletGold = 500;
       this.targetScore = 1050;
       this.dynamiteCount = 2;
       this.spawnLevelItems(1);
+      this.setZone('HOTEL');
     }
 
     this.emitState();
   }
 
   public launchHook(): void {
-    if (this.state !== 'PLAYING') return;
+    if (this.state !== 'MINING') return;
     this.hookController.launch(this.buffs.magnet);
     this.emitState();
   }
 
   public tryUseDynamite(): void {
-    if (this.state !== 'PLAYING' || this.dynamiteCount <= 0) return;
+    if (this.state !== 'MINING' || this.dynamiteCount <= 0) return;
     if (this.hookController.throwDynamiteOnAttachedItem()) {
       this.dynamiteCount--;
       this.emitState();
@@ -517,6 +440,24 @@ export class GoldMinerEngine {
     return isMuted;
   }
 
+  public emitFloatingPopup(worldPos: THREE.Vector3, text: string, color: string = '#fde047'): void {
+    if (!this.onFloatingPopup) return;
+    const v = worldPos.clone().project(this.camera);
+    const width = this.container.clientWidth || window.innerWidth;
+    const height = this.container.clientHeight || window.innerHeight;
+
+    const x = (v.x * 0.5 + 0.5) * width;
+    const y = (-(v.y * 0.5) + 0.5) * height;
+
+    this.popupSeq++;
+    this.onFloatingPopup({ id: this.popupSeq, text, color, x, y });
+  }
+
+  public setMinerSpeech(text: string): void {
+    this.minerSpeech = text;
+    this.emitState();
+  }
+
   public resize(width: number, height: number): void {
     if (!this.renderer || !this.camera || !this.composer) return;
     const pr = Math.min(window.devicePixelRatio || 1, 2);
@@ -535,12 +476,12 @@ export class GoldMinerEngine {
   public emitState(): void {
     if (!this.onStateChange) return;
     const canUseDyn =
-      this.state === 'PLAYING' &&
+      this.state === 'MINING' &&
       this.dynamiteCount > 0 &&
       this.hookController.state === 'RETURNING' &&
       this.hookController.attachedItem !== null;
 
-    const canFinishEarly = this.state === 'PLAYING' && this.walletGold >= this.targetScore;
+    const canFinishEarly = this.state === 'MINING' && this.walletGold >= this.targetScore;
 
     this.onStateChange({
       screen: this.state,
@@ -556,6 +497,9 @@ export class GoldMinerEngine {
       isMuted: this.sound.muted,
       lastResultPassed: this.lastResultPassed,
       highScore: this.highScore,
+      currentZoneName: this.currentZoneName,
+      interactionPrompt: this.activePrompt,
+      questText: this.questText,
     });
   }
 
@@ -565,11 +509,102 @@ export class GoldMinerEngine {
     const dt = Math.min(this.clock.getDelta(), 0.1);
     const elapsed = this.clock.getElapsedTime();
 
-    if (this.state === 'PLAYING') {
+    // ==========================================
+    // 1. EXPLORATION MOVEMENT & INTERACTION CHECKS
+    // ==========================================
+    let detectedPrompt: InteractionPrompt | null = null;
+
+    if (this.state === 'HOTEL') {
+      this.playerAvatar.moveInput(this.moveInputState.dx, this.moveInputState.dz, dt, {
+        minX: -3.6,
+        maxX: 3.6,
+        minZ: -3.6,
+        maxZ: 4.0,
+      });
+      this.playerAvatar.update(dt, elapsed);
+
+      // Distance to Hotel Exit Door (0, 0, 3.8)
+      if (this.playerAvatar.position.distanceTo(new THREE.Vector3(0, 0, 3.8)) < 1.6) {
+        detectedPrompt = {
+          actionKey: 'E',
+          title: 'Bước Ra Thị Trấn',
+          description: 'Rời khách sạn để tiến vào phố thị trấn miền Tây',
+          onTrigger: () => this.setZone('TOWN'),
+        };
+      }
+    } else if (this.state === 'TOWN') {
+      this.playerAvatar.moveInput(this.moveInputState.dx, this.moveInputState.dz, dt, {
+        minX: -5.8,
+        maxX: 5.8,
+        minZ: -11.0,
+        maxZ: 12.0,
+      });
+      this.playerAvatar.update(dt, elapsed);
+
+      // Dynamic Camera follow in Town
+      this.camera.position.z = this.playerAvatar.position.z - 8.5;
+      this.camera.position.x = this.playerAvatar.position.x * 0.4;
+      this.camera.lookAt(this.playerAvatar.position.x * 0.2, 1.8, this.playerAvatar.position.z + 4.5);
+
+      // 1. Near General Store (-5.2, 0, 0)
+      if (this.playerAvatar.position.distanceTo(new THREE.Vector3(-4.8, 0, 0)) < 2.2) {
+        detectedPrompt = {
+          actionKey: 'E',
+          title: 'Vào Cửa Hàng Trang Bị',
+          description: 'Ghé tiệm mua thuốc nổ TNT, nước tăng lực và cỏ may mắn',
+          onTrigger: () => this.setZone('SHOP'),
+        };
+      }
+      // 2. Near Mountain Mine Trail (0, 0, 11.0)
+      else if (this.playerAvatar.position.distanceTo(new THREE.Vector3(0, 0, 10.8)) < 2.2) {
+        detectedPrompt = {
+          actionKey: 'E',
+          title: 'Đi Bộ Ra Mỏ Vàng',
+          description: 'Rời thị trấn theo lối mòn leo lên mỏ vàng trên núi',
+          onTrigger: () => this.setZone('MINE_EXTERIOR'),
+        };
+      }
+      // 3. Near Hotel Door (0, 0, -10.0)
+      else if (this.playerAvatar.position.distanceTo(new THREE.Vector3(0, 0, -10.0)) < 2.0) {
+        detectedPrompt = {
+          actionKey: 'E',
+          title: 'Trở Lại Khách Sạn',
+          description: 'Vào lại phòng nghỉ khách sạn thợ mỏ',
+          onTrigger: () => this.setZone('HOTEL'),
+        };
+      }
+    } else if (this.state === 'MINE_EXTERIOR') {
+      this.playerAvatar.moveInput(this.moveInputState.dx, this.moveInputState.dz, dt, {
+        minX: -4.5,
+        maxX: 4.5,
+        minZ: -8.0,
+        maxZ: 5.2,
+      });
+      this.playerAvatar.update(dt, elapsed);
+
+      // Near Mountain Mine Portal (0, 0, 4.8)
+      if (this.playerAvatar.position.distanceTo(new THREE.Vector3(0, 0, 4.5)) < 2.2) {
+        detectedPrompt = {
+          actionKey: 'E',
+          title: 'Vào Hầm Mỏ Vàng',
+          description: 'Bước vào hầm mỏ và khởi động máy đào',
+          onTrigger: () => this.setZone('MINING'),
+        };
+      }
+      // Path back to town (0, 0, -7.5)
+      else if (this.playerAvatar.position.distanceTo(new THREE.Vector3(0, 0, -7.0)) < 1.8) {
+        detectedPrompt = {
+          actionKey: 'E',
+          title: 'Quay Về Thị Trấn',
+          description: 'Đi ngược lại con đường về thị trấn',
+          onTrigger: () => this.setZone('TOWN'),
+        };
+      }
+    } else if (this.state === 'MINING') {
       this.remainingTime -= dt;
       if (this.remainingTime <= 0) {
         this.remainingTime = 0;
-        this.finishLevel();
+        this.finishMiningLevel();
         return;
       }
 
@@ -581,13 +616,29 @@ export class GoldMinerEngine {
         (tntItem) => this.triggerTNTExplosion(tntItem),
         (msg) => this.setMinerSpeech(msg)
       );
+    } else if (this.state === 'BLASTING') {
+      // Countdown and explode the mountain wall!
+      this.blastCountdown -= dt;
+      if (this.blastCountdown <= 0 && this.blastCountdown > -10) {
+        this.blastCountdown = -99; // trigger once
+        this.vfxPool.spawnVFX('TNTExplosion', new THREE.Vector3(0, 0, 1.5));
+        this.vfxPool.spawnVFX('RockDebris', new THREE.Vector3(-1.5, 0, 1.5));
+        this.vfxPool.spawnVFX('RockDebris', new THREE.Vector3(1.5, 0, 1.5));
+        this.sound.playExplosion();
+        this.cameraDirector.triggerShake(0.85, 0.65);
+        this.explosionFlashLight.intensity = 15;
+
+        // Advance to next mine level!
+        this.level++;
+        this.targetScore = Math.floor(this.walletGold + 650 + this.level * 250);
+        this.spawnLevelItems(this.level);
+        this.setMinerSpeech(`🎉 "ĐÃ PHÁ NÚI THÀNH CÔNG! Phát hiện mỏ vàng Màn ${this.level} phong phú hơn!"`);
+      }
+    }
+
+    if (this.activePrompt !== detectedPrompt) {
+      this.activePrompt = detectedPrompt;
       this.emitState();
-    } else {
-      // Background idle movement for Home/Shop/Result
-      this.hookController.swingTime += dt * 1.1;
-      this.hookController.currentAngle = Math.sin(this.hookController.swingTime) * 0.45;
-      this.hookController.pivotGroup.rotation.z = this.hookController.currentAngle;
-      this.minerCharacter.update(dt, elapsed, 'SWINGING', this.hookController.currentAngle, null, 1.0);
     }
 
     // Dynamic rotation on Diamonds & TNT fuse sparks
@@ -604,15 +655,13 @@ export class GoldMinerEngine {
     }
 
     if (this.explosionFlashLight && this.explosionFlashLight.intensity > 0) {
-      this.explosionFlashLight.intensity = Math.max(0, this.explosionFlashLight.intensity - dt * 28);
+      this.explosionFlashLight.intensity = Math.max(0, this.explosionFlashLight.intensity - dt * 25);
     }
 
-    this.lanternLights.forEach((light, idx) => {
-      light.intensity = 2.4 + Math.sin(elapsed * 8 + idx * 3) * 0.2;
-    });
-
     this.vfxPool.update(dt);
-    this.cameraDirector.update(dt);
+    if (this.state === 'MINING') {
+      this.cameraDirector.update(dt);
+    }
     this.composer.render();
   }
 
@@ -626,4 +675,3 @@ export class GoldMinerEngine {
     }
   }
 }
-
