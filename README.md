@@ -64,11 +64,12 @@ Bạn có 2 cách cực kỳ đơn giản để đưa game lên mạng:
    git push -u origin main
    ```
 2. Truy cập [Cloudflare Dashboard](https://dash.cloudflare.com/) ➔ Chọn **Workers & Pages** ➔ **Create application** ➔ **Pages** ➔ **Connect to Git**.
-3. Chọn repo GitHub của bạn và điền cấu hình:
-   - **Framework preset**: `Vite`
-   - **Build command**: `npm run build`
+3. Chọn repo GitHub của bạn và điền cấu hình chính xác:
+   - **Framework preset**: `Vite` (hoặc `None`)
+   - **Build command**: `npm run build` *(Lưu ý: KHÔNG điền `wrangler deploy` hay `npm run deploy` ở đây)*
    - **Build output directory**: `dist`
-4. Bấm **Save and Deploy**. Mỗi khi bạn push code mới lên GitHub, Cloudflare sẽ tự động build và cập nhật game tức thì!
+   - **Root directory**: để trống hoặc `/`
+4. Bấm **Save and Deploy**. Cloudflare sẽ tự động build và upload game lên mạng toàn cầu!
 
 ---
 
