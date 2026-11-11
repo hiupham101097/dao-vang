@@ -1,0 +1,2498 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Đào Vàng 3D — PBR Edition (Gold Miner 3D)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,600;0,700;1,700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Three.js r160 ES Modules + RoomEnvironment PMREM + UnrealBloomPass -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <style>
+        :root {
+            --font-display: 'Chakra Petch', sans-serif;
+            --font-sans: 'Inter', sans-serif;
+        }
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            box-sizing: border-box;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #080604;
+            font-family: var(--font-sans);
+            color: #f8fafc;
+        }
+        .font-display {
+            font-family: var(--font-display);
+        }
+        #canvas-container {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            cursor: crosshair;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        .hud-glass {
+            background: linear-gradient(145deg, rgba(24, 18, 13, 0.88), rgba(10, 8, 6, 0.94));
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(251, 191, 36, 0.32);
+            box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        }
+        .gold-btn {
+            background: linear-gradient(180deg, #fde047 0%, #f59e0b 50%, #b45309 100%);
+            border: 1px solid #fef08a;
+            box-shadow: 0 6px 22px rgba(245, 158, 11, 0.45), inset 0 2px 1px rgba(255, 255, 255, 0.55);
+            transition: all 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .gold-btn:hover:not(:disabled) {
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 10px 28px rgba(251, 191, 36, 0.7), inset 0 2px 2px rgba(255, 255, 255, 0.7);
+            filter: brightness(1.06);
+        }
+        .gold-btn:active:not(:disabled) {
+            transform: translateY(1px) scale(0.98);
+        }
+        .secondary-btn {
+            background: linear-gradient(180deg, rgba(41, 37, 36, 0.95) 0%, rgba(28, 25, 23, 0.98) 100%);
+            border: 1px solid rgba(245, 158, 11, 0.4);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+            transition: all 0.18s ease;
+        }
+        .secondary-btn:hover:not(:disabled) {
+            border-color: #fbbf24;
+            background: rgba(68, 64, 60, 0.95);
+            transform: translateY(-1px);
+        }
+        .danger-btn {
+            background: linear-gradient(180deg, #ef4444 0%, #b91c1c 60%, #7f1d1d 100%);
+            border: 1px solid #fca5a5;
+            box-shadow: 0 4px 16px rgba(239, 68, 68, 0.45);
+            transition: all 0.15s ease;
+        }
+        .danger-btn:hover:not(:disabled) {
+            transform: translateY(-1px) scale(1.04);
+            box-shadow: 0 8px 22px rgba(239, 68, 68, 0.7);
+        }
+        .danger-btn:disabled {
+            opacity: 0.35;
+            filter: grayscale(0.7);
+            cursor: not-allowed;
+        }
+        @keyframes floatUpFade {
+            0% { opacity: 0; transform: translate(-50%, 8px) scale(0.75); }
+            18% { opacity: 1; transform: translate(-50%, -10px) scale(1.1); }
+            80% { opacity: 1; transform: translate(-50%, -44px) scale(1); }
+            100% { opacity: 0; transform: translate(-50%, -68px) scale(0.9); }
+        }
+        .floating-popup {
+            position: absolute;
+            pointer-events: none;
+            z-index: 40;
+            animation: floatUpFade 1.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            text-shadow: 0 3px 10px rgba(0,0,0,0.95);
+        }
+        @keyframes pulseUrgent {
+            0%, 100% { transform: scale(1); color: #f87171; }
+            50% { transform: scale(1.12); color: #ef4444; text-shadow: 0 0 14px rgba(239,68,68,0.85); }
+        }
+        .timer-urgent {
+            animation: pulseUrgent 0.65s infinite;
+        }
+    </style>
+</head>
+<body class="relative w-full h-full overflow-hidden select-none">
+
+    <!-- 3D WebGL Canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- Floating Score / Status Popups -->
+    <div id="popups-container" class="absolute inset-0 pointer-events-none z-30 overflow-hidden"></div>
+
+    <!-- =========================================================================
+         1. PURE GAMEPLAY HUD (ONLY SHOWN WHEN PLAYING - TOP CENTER IS 100% EMPTY
+            SO THE 3D MINER CHARACTER IS NEVER OBSCURED)
+         ========================================================================= -->
+    <div id="gameplay-hud" class="hidden absolute inset-x-0 top-0 z-20 p-2.5 sm:p-4 pointer-events-none flex items-start justify-between gap-2">
+        
+        <!-- TOP-LEFT: Level, Money & Target Progress -->
+        <div class="hud-glass rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3 pointer-events-auto flex items-center gap-3 sm:gap-4 min-w-[235px] sm:min-w-[310px]">
+            <div class="flex flex-col items-center justify-center bg-amber-500/15 border border-amber-400/40 rounded-xl px-2.5 py-1.5">
+                <span class="text-[9px] uppercase tracking-widest text-amber-300 font-bold">Màn</span>
+                <span id="hud-level" class="font-display text-lg sm:text-2xl font-extrabold text-amber-400 leading-none">01</span>
+            </div>
+
+            <div class="flex-1">
+                <div class="flex items-baseline justify-between gap-3">
+                    <div>
+                        <span class="text-[10px] uppercase text-stone-400 block">Tiền của bạn</span>
+                        <span id="hud-score" class="font-display text-lg sm:text-2xl font-extrabold text-amber-300">$500</span>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-[10px] uppercase text-stone-400 block">Mục tiêu</span>
+                        <span id="hud-target" class="font-display text-sm sm:text-lg font-bold text-emerald-400">$1,150</span>
+                    </div>
+                </div>
+                <div class="w-full h-2 bg-stone-800 rounded-full overflow-hidden mt-1.5 border border-stone-700/70">
+                    <div id="hud-progress-bar" class="h-full bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-400 transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TOP-CENTER: COMPLETELY EMPTY SO 3D MINER CHARACTER IS 100% VISIBLE -->
+        <div class="hidden lg:flex flex-col items-center pointer-events-none mt-0.5">
+            <div id="miner-speech-bubble" class="px-3.5 py-1 rounded-full bg-stone-950/75 border border-amber-400/40 text-amber-200 text-xs font-semibold shadow-lg transition-opacity duration-300">
+                👷 Ông Thợ Mỏ: "Nhấn Chuột Trái hoặc Phím Space để phóng móc!"
+            </div>
+        </div>
+
+        <!-- TOP-RIGHT: Timer, Active Buffs, Dynamite Button & Home/Shop Shortcuts -->
+        <div class="hud-glass rounded-2xl px-3 py-2 sm:px-4 sm:py-2.5 pointer-events-auto flex items-center gap-2 sm:gap-3">
+            <!-- Countdown Timer -->
+            <div class="flex items-center gap-2 pr-2 border-r border-stone-700/80">
+                <div class="text-right">
+                    <span class="text-[10px] uppercase text-stone-400 block">Thời Gian</span>
+                    <span id="hud-timer" class="font-display text-xl sm:text-2xl font-extrabold text-white leading-none">60s</span>
+                </div>
+            </div>
+
+            <!-- Active Buff Icons -->
+            <div id="hud-buffs" class="hidden sm:flex items-center gap-1">
+                <span id="badge-strength" class="hidden px-2 py-1 rounded-lg bg-sky-500/20 border border-sky-400/40 text-xs" title="Nước Tăng Lực (+85% tốc độ kéo)">⚡</span>
+                <span id="badge-clover" class="hidden px-2 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-xs" title="Cỏ Bốn Lá (Túi bí ẩn x2 may mắn)">🍀</span>
+                <span id="badge-polish" class="hidden px-2 py-1 rounded-lg bg-cyan-500/20 border border-cyan-400/40 text-xs" title="Đá Đánh Bóng (+50% giá Kim Cương)">💎</span>
+                <span id="badge-magnet" class="hidden px-2 py-1 rounded-lg bg-purple-500/20 border border-purple-400/40 text-xs" title="Ngàm Titan (+25% tốc độ phóng)">🧲</span>
+            </div>
+
+            <!-- Throw Dynamite Button -->
+            <button id="btn-use-dynamite" disabled class="danger-btn rounded-xl px-3 py-1.5 text-white font-semibold text-xs flex items-center gap-1.5" title="Ném thuốc nổ phá đá nặng đang kéo (Phím E hoặc Chuột Phải)">
+                <span class="text-base">🧨</span>
+                <div class="text-left leading-tight">
+                    <span class="block font-bold">Ném Nổ (E)</span>
+                    <span class="text-[10px] text-red-200">SL: <b id="hud-dynamite-count">2</b></span>
+                </div>
+            </button>
+
+            <!-- Instant Next Level Button (Appears as soon as Target Score is reached) -->
+            <button id="btn-finish-early" class="hidden gold-btn rounded-xl px-3 py-2 text-stone-950 font-display font-extrabold text-xs uppercase tracking-wider animate-bounce">
+                ✔ Qua Màn Ngay →
+            </button>
+
+            <!-- Back to Home Screen Button -->
+            <button id="btn-back-home" class="secondary-btn rounded-xl p-2 text-stone-200 hover:text-amber-300" title="Về Trang Chủ / Cửa Hàng">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- =========================================================================
+         2. HOME SCREEN (TRANG CHỦ) - POSITIONED AT BOTTOM SO THE 3D MINER
+            CHARACTER AT THE TOP IS 100% VISIBLE AND SHOWCASED LIVE!
+         ========================================================================= -->
+    <div id="screen-home" class="fixed inset-0 z-20 pointer-events-none flex flex-col justify-between p-4 sm:p-6">
+        
+        <!-- Top Status Bar on Home Screen -->
+        <div class="w-full max-w-6xl mx-auto flex items-center justify-between pointer-events-auto">
+            <div class="hud-glass rounded-2xl px-4 py-2.5 flex items-center gap-3">
+                <span class="text-2xl">👷</span>
+                <div>
+                    <span class="text-[10px] uppercase tracking-widest text-amber-400 font-bold block">Nhân Vật Chính 3D</span>
+                    <span class="font-display font-bold text-sm sm:text-base text-white">Ông Già Đào Vàng & Xe Tời Cáp</span>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2.5">
+                <div class="hud-glass rounded-2xl px-4 py-2 flex items-center gap-2.5">
+                    <span class="text-xl">🪙</span>
+                    <div>
+                        <span class="text-[10px] uppercase text-stone-400 block">Túi Tiền Hiện Có</span>
+                        <span id="home-wallet-gold" class="font-display text-lg sm:text-xl font-extrabold text-amber-400">$500</span>
+                    </div>
+                </div>
+
+                <button id="btn-audio-toggle" class="hud-glass p-3 rounded-2xl text-amber-400 hover:text-amber-300 transition" title="Bật/Tắt Âm Thanh">
+                    <svg id="icon-sound-on" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
+                    </svg>
+                    <svg id="icon-sound-off" class="w-5 h-5 hidden text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Bottom Main Menu Card (Leaves Upper 55% of Screen Open for 3D Miner Character) -->
+        <div class="w-full max-w-2xl mx-auto hud-glass rounded-3xl p-5 sm:p-7 pointer-events-auto text-center border-2 border-amber-500/40 mb-1 sm:mb-3">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300 text-xs font-semibold mb-2">
+                <span>✨ THREE.JS PBR REALISTIC • 3D MINER CHARACTER</span>
+            </div>
+
+            <h1 class="font-display text-3xl sm:text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-yellow-200 via-amber-400 to-amber-600">
+                ĐÀO VÀNG 3D
+            </h1>
+            <p class="text-stone-300 text-xs sm:text-sm mt-1.5 max-w-lg mx-auto">
+                Cùng <b>Ông Già Đào Vàng</b> điều khiển tời cáp 3D gắp vàng nguyên khối, kim cương và mua sắm trang bị tại Cửa Hàng trước khi xuống hầm mỏ!
+            </p>
+
+            <!-- Action Buttons Row -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-5">
+                <button id="btn-home-play" class="gold-btn py-3.5 px-6 rounded-2xl font-display font-extrabold text-base sm:text-lg text-stone-950 uppercase tracking-wider flex items-center justify-center gap-2">
+                    <span>▶ BẮT ĐẦU CHƠI (MÀN <span id="home-level-num">1</span>)</span>
+                </button>
+
+                <button id="btn-home-shop" class="secondary-btn py-3.5 px-6 rounded-2xl font-display font-bold text-base text-amber-300 uppercase tracking-wider flex items-center justify-center gap-2">
+                    <span>🛒 CỬA HÀNG VẬT PHẨM</span>
+                </button>
+            </div>
+
+            <!-- Current Inventory Badges on Home Screen -->
+            <div class="mt-3.5 flex flex-wrap items-center justify-center gap-2 text-xs">
+                <span class="px-3 py-1 rounded-xl bg-stone-900/90 border border-stone-700 text-stone-300 font-semibold">
+                    🧨 Thuốc nổ TNT: <b id="home-inv-dynamite" class="text-red-400">2</b>
+                </span>
+                <span class="px-3 py-1 rounded-xl bg-stone-900/90 border border-stone-700 text-stone-300 font-semibold">
+                    ⚡ Nước tăng lực: <b id="home-inv-strength" class="text-stone-500">Chưa mua</b>
+                </span>
+                <span class="px-3 py-1 rounded-xl bg-stone-900/90 border border-stone-700 text-stone-300 font-semibold">
+                    🍀 Cỏ may mắn: <b id="home-inv-clover" class="text-stone-500">Chưa mua</b>
+                </span>
+            </div>
+
+            <!-- Quick Controls & Guide Bar -->
+            <div class="mt-4 pt-3 border-t border-stone-800 flex flex-wrap items-center justify-between gap-2 text-xs text-stone-400">
+                <div class="flex items-center gap-3">
+                    <span>🖱️ <b>Chuột Trái / Space</b>: Phóng móc</span>
+                    <span>🧨 <b>Phím E / Chuột Phải</b>: Ném thuốc nổ</span>
+                </div>
+                <button id="btn-open-guide" class="text-amber-400 hover:underline font-semibold">
+                    📖 Xem Bảng Giá Khoáng Sản
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================================================================
+         3. DEDICATED SHOP SCREEN (CỬA HÀNG VẬT PHẨM - ACCESSIBLE FROM HOME OR
+            BETWEEN LEVELS)
+         ========================================================================= -->
+    <div id="screen-shop" class="fixed inset-0 z-30 hidden items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md">
+        <div class="hud-glass max-w-4xl w-full rounded-3xl p-5 sm:p-7 border-2 border-amber-500/40 max-h-[92vh] flex flex-col justify-between overflow-y-auto">
+            
+            <!-- Shop Header -->
+            <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-stone-700/80">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-2xl">
+                        🛒
+                    </div>
+                    <div>
+                        <span id="shop-subtitle" class="text-xs uppercase tracking-widest text-emerald-400 font-bold block">Trạm Tiếp Tế Thợ Mỏ</span>
+                        <h2 class="font-display text-2xl sm:text-3xl font-extrabold text-amber-300">CỬA HÀNG VẬT PHẨM 3D</h2>
+                    </div>
+                </div>
+
+                <div class="bg-stone-900/95 border border-amber-500/40 rounded-2xl px-4 py-2 text-right">
+                    <span class="text-xs text-stone-400 block">Số dư hiện tại</span>
+                    <span id="shop-wallet-gold" class="font-display text-2xl font-extrabold text-amber-400">$500</span>
+                </div>
+            </div>
+
+            <!-- 5 Shop Items Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 my-5">
+                
+                <!-- Item 1: TNT Dynamite -->
+                <div class="bg-stone-900/90 border border-stone-700/80 rounded-2xl p-4 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-3xl">🧨</span>
+                            <span id="shop-owned-dynamite" class="px-2.5 py-0.5 rounded-full bg-red-500/20 border border-red-400/30 text-red-300 text-xs font-bold">Đang có: 2</span>
+                        </div>
+                        <h3 class="font-display font-bold text-base text-white">Bình Thuốc Nổ TNT</h3>
+                        <p class="text-xs text-stone-400 mt-1">Bấm phím <b>E</b> hoặc nút Ném Nổ khi đang kéo đá nặng để Ông Thợ Mỏ ném thuốc nổ phá hủy ngay.</p>
+                    </div>
+                    <button id="btn-buy-dynamite" class="mt-4 w-full py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300 font-display font-bold text-sm transition">
+                        Mua Thêm ($150)
+                    </button>
+                </div>
+
+                <!-- Item 2: Strength Drink -->
+                <div class="bg-stone-900/90 border border-stone-700/80 rounded-2xl p-4 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-3xl">⚡</span>
+                            <span class="px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 text-xs font-semibold">Hiệu lực 1 màn</span>
+                        </div>
+                        <h3 class="font-display font-bold text-base text-white">Nước Tăng Lực</h3>
+                        <p class="text-xs text-stone-400 mt-1">Tăng <b>+85% tốc độ quay tời</b> của Ông Già Đào Vàng, kéo vàng lớn và đá tảng nhanh vượt trội.</p>
+                    </div>
+                    <button id="btn-buy-strength" class="mt-4 w-full py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300 font-display font-bold text-sm transition">
+                        Mua ($250)
+                    </button>
+                </div>
+
+                <!-- Item 3: Lucky Clover -->
+                <div class="bg-stone-900/90 border border-stone-700/80 rounded-2xl p-4 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-3xl">🍀</span>
+                            <span class="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold">Hiệu lực 1 màn</span>
+                        </div>
+                        <h3 class="font-display font-bold text-base text-white">Cỏ Bốn Lá May Mắn</h3>
+                        <p class="text-xs text-stone-400 mt-1">Tăng gấp đôi cơ hội mở ra túi tiền khổng lồ (<b>$500 - $950</b>) từ các Túi Bí Ẩn dưới hầm.</p>
+                    </div>
+                    <button id="btn-buy-clover" class="mt-4 w-full py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300 font-display font-bold text-sm transition">
+                        Mua ($200)
+                    </button>
+                </div>
+
+                <!-- Item 4: Diamond Polish -->
+                <div class="bg-stone-900/90 border border-stone-700/80 rounded-2xl p-4 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-3xl">💎</span>
+                            <span class="px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 text-xs font-semibold">Hiệu lực 1 màn</span>
+                        </div>
+                        <h3 class="font-display font-bold text-base text-white">Đá Đánh Bóng Kim Cương</h3>
+                        <p class="text-xs text-stone-400 mt-1">Tăng <b>+50% giá trị</b> mọi viên Kim Cương đào được trong màn chơi (từ $650 lên <b>$975</b>/viên).</p>
+                    </div>
+                    <button id="btn-buy-polish" class="mt-4 w-full py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300 font-display font-bold text-sm transition">
+                        Mua ($300)
+                    </button>
+                </div>
+
+                <!-- Item 5: Titanium Claw Magnet -->
+                <div class="bg-stone-900/90 border border-stone-700/80 rounded-2xl p-4 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-3xl">🧲</span>
+                            <span class="px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-xs font-semibold">Hiệu lực 1 màn</span>
+                        </div>
+                        <h3 class="font-display font-bold text-base text-white">Ngàm Kẹp Titan Từ Tính</h3>
+                        <p class="text-xs text-stone-400 mt-1">Tăng <b>+25% tốc độ phóng móc</b> và mở rộng độ nhạy bắt dính Kim Cương/Vàng ở khoảng cách gần.</p>
+                    </div>
+                    <button id="btn-buy-magnet" class="mt-4 w-full py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300 font-display font-bold text-sm transition">
+                        Mua ($220)
+                    </button>
+                </div>
+
+                <!-- Miner Tip Card -->
+                <div class="bg-gradient-to-br from-amber-500/10 to-stone-900/90 border border-amber-500/30 rounded-2xl p-4 flex flex-col justify-center">
+                    <div class="text-xs uppercase tracking-wider text-amber-400 font-bold mb-1">💡 Mẹo Từ Ông Thợ Mỏ</div>
+                    <p class="text-xs text-stone-300 leading-relaxed">
+                        Vàng Nguyên Khối và Đá Tảng rất nặng. Hãy kết hợp <b>Nước Tăng Lực</b> hoặc dùng <b>Thuốc Nổ TNT</b> phá đá cản đường để gắp Kim Cương bên dưới!
+                    </p>
+                </div>
+            </div>
+
+            <!-- Shop Footer Actions -->
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-stone-700/80">
+                <button id="btn-shop-to-home" class="secondary-btn w-full sm:w-auto px-6 py-3 rounded-2xl font-display font-bold text-sm text-stone-200 uppercase">
+                    ← Về Trang Chủ
+                </button>
+                <button id="btn-shop-play" class="gold-btn w-full sm:flex-1 py-3.5 px-8 rounded-2xl font-display font-extrabold text-base text-stone-950 uppercase tracking-wider">
+                    ▶ VÀO CHƠI NGAY (MÀN <span id="shop-next-level">1</span>) →
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================================================================
+         4. MINERAL GUIDE MODAL (BẢNG GIÁ KHOÁNG SẢN)
+         ========================================================================= -->
+    <div id="modal-guide" class="fixed inset-0 z-40 hidden items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+        <div class="hud-glass max-w-lg w-full rounded-3xl p-6 border-2 border-amber-500/40">
+            <div class="flex items-center justify-between pb-3 border-b border-stone-700">
+                <h3 class="font-display text-xl font-extrabold text-amber-300">📖 BẢNG GIÁ KHOÁNG SẢN 3D</h3>
+                <button id="btn-close-guide" class="text-stone-400 hover:text-white text-xl font-bold px-2">✕</button>
+            </div>
+            <div class="grid grid-cols-2 gap-2.5 my-4 text-left">
+                <div class="bg-stone-900/90 border border-stone-700 rounded-xl p-2.5 flex items-center gap-2.5">
+                    <span class="text-2xl">🪙</span>
+                    <div>
+                        <div class="text-xs font-bold text-amber-300">Vàng Nguyên Khối</div>
+                        <div class="text-[11px] text-stone-400">$100 / $250 / $500</div>
+                    </div>
+                </div>
+                <div class="bg-stone-900/90 border border-stone-700 rounded-xl p-2.5 flex items-center gap-2.5">
+                    <span class="text-2xl">💎</span>
+                    <div>
+                        <div class="text-xs font-bold text-cyan-300">Kim Cương Tinh Khiết</div>
+                        <div class="text-[11px] text-stone-400">$650 • Nhẹ, kéo nhanh</div>
+                    </div>
+                </div>
+                <div class="bg-stone-900/90 border border-stone-700 rounded-xl p-2.5 flex items-center gap-2.5">
+                    <span class="text-2xl">🪨</span>
+                    <div>
+                        <div class="text-xs font-bold text-stone-300">Đá Trầm Tích</div>
+                        <div class="text-[11px] text-stone-400">$25 - $60 • Rất nặng</div>
+                    </div>
+                </div>
+                <div class="bg-stone-900/90 border border-stone-700 rounded-xl p-2.5 flex items-center gap-2.5">
+                    <span class="text-2xl">💰</span>
+                    <div>
+                        <div class="text-xs font-bold text-emerald-300">Túi Bí Ẩn</div>
+                        <div class="text-[11px] text-stone-400">$80 - $950 hoặc +1 TNT</div>
+                    </div>
+                </div>
+                <div class="bg-stone-900/90 border border-stone-700 rounded-xl p-2.5 flex items-center gap-2.5 col-span-2">
+                    <span class="text-2xl">🛢️</span>
+                    <div>
+                        <div class="text-xs font-bold text-red-400">Thùng Thuốc Nổ TNT</div>
+                        <div class="text-[11px] text-stone-400">Gắp trúng sẽ phát nổ 3D phá hủy các vật thể xung quanh bán kính R!</div>
+                    </div>
+                </div>
+            </div>
+            <button id="btn-close-guide-bottom" class="gold-btn w-full py-3 rounded-xl font-display font-extrabold text-sm text-stone-950 uppercase">
+                ĐÃ HIỂU
+            </button>
+        </div>
+    </div>
+
+    <!-- =========================================================================
+         5. LEVEL RESULT / GAME OVER MODAL
+         ========================================================================= -->
+    <div id="modal-result" class="fixed inset-0 z-30 hidden items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+        <div class="hud-glass max-w-md w-full rounded-3xl p-6 sm:p-7 border-2 border-amber-500/40 text-center">
+            <div id="result-icon" class="w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-3xl mx-auto mb-3">🏆</div>
+            <h2 id="result-title" class="font-display text-2xl sm:text-3xl font-extrabold text-amber-300">HOÀN THÀNH MÀN 1!</h2>
+            <p id="result-desc" class="text-stone-300 text-sm mt-1.5">
+                Ông Già Đào Vàng đã thu hoạch vượt chỉ tiêu của màn chơi!
+            </p>
+
+            <div class="bg-stone-900/90 border border-stone-700 rounded-2xl p-4 my-5 flex justify-around">
+                <div>
+                    <span class="text-xs text-stone-400 block">Tiền hiện có</span>
+                    <span id="result-score" class="font-display text-2xl font-extrabold text-amber-400">$1,200</span>
+                </div>
+                <div class="border-l border-stone-700 pl-6">
+                    <span class="text-xs text-stone-400 block">Mục tiêu yêu cầu</span>
+                    <span id="result-target" class="font-display text-2xl font-extrabold text-emerald-400">$1,000</span>
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-2.5">
+                <button id="btn-result-shop" class="gold-btn w-full py-3.5 rounded-2xl font-display font-extrabold text-base text-stone-950 uppercase">
+                    🛒 VÀO CỬA HÀNG MUA ĐỒ & QUA MÀN
+                </button>
+                <button id="btn-result-Action" class="secondary-btn w-full py-3 rounded-2xl font-display font-bold text-sm text-amber-300 uppercase">
+                    ▶ CHƠI NGAY MÀN TIẾP THEO
+                </button>
+                <button id="btn-result-home" class="text-xs text-stone-400 hover:text-white pt-1 font-semibold">
+                    🏠 Về Trang Chủ
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================================================================
+         MAIN 3D APPLICATION MODULE (THREE.JS R160 + PBR + 3D MINER CHARACTER)
+         ========================================================================= -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        /**
+         * ============================================================================
+         * 1. PROCEDURAL WEB AUDIO SYNTHESIZER
+         * ============================================================================
+         */
+        class SoundEngine {
+            constructor() {
+                this.ctx = null;
+                this.muted = false;
+                this.lastTick = 0;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (AudioCtx) this.ctx = new AudioCtx();
+                }
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            toggleMute() {
+                this.muted = !this.muted;
+                return this.muted;
+            }
+
+            playLaunch() {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(360, now);
+                osc.frequency.exponentialRampToValueAtTime(115, now + 0.18);
+                gain.gain.setValueAtTime(0.18, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.19);
+            }
+
+            playHit(highVal = false) {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const freqs = highVal ? [880, 1318.5, 1760] : [260, 390];
+                freqs.forEach((f, i) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = highVal ? 'sine' : 'square';
+                    osc.frequency.setValueAtTime(f, now + i * 0.03);
+                    gain.gain.setValueAtTime(0.14, now + i * 0.03);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25 + i * 0.04);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + i * 0.03);
+                    osc.stop(now + 0.3 + i * 0.04);
+                });
+            }
+
+            playWinchTick(speedRatio) {
+                if (this.muted || !this.ctx) return;
+                const now = performance.now();
+                const interval = Math.max(55, 210 - speedRatio * 130);
+                if (now - this.lastTick < interval) return;
+                this.lastTick = now;
+
+                const t = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(95 + speedRatio * 70, t);
+                gain.gain.setValueAtTime(0.045, t);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + 0.035);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(t);
+                osc.stop(t + 0.04);
+            }
+
+            playExplosion() {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const len = this.ctx.sampleRate * 0.6;
+                const buffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < len; i++) {
+                    data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.16));
+                }
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(550, now);
+                filter.frequency.exponentialRampToValueAtTime(60, now + 0.58);
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.55, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+                noise.start(now);
+            }
+
+            playCoin(val = 200) {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const notes = val >= 400 ? [523.25, 659.25, 783.99, 1046.5] : [523.25, 659.25];
+                notes.forEach((f, i) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(f, now + i * 0.06);
+                    gain.gain.setValueAtTime(0.16, now + i * 0.06);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.24);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + i * 0.06);
+                    osc.stop(now + i * 0.06 + 0.25);
+                });
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 2. PROCEDURAL PBR TEXTURE GENERATOR
+         * ============================================================================
+         */
+        class PBRTextureGenerator {
+            static createStoneBumpMap() {
+                const canvas = document.createElement('canvas');
+                canvas.width = 256;
+                canvas.height = 256;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#808080';
+                ctx.fillRect(0, 0, 256, 256);
+
+                for (let i = 0; i < 420; i++) {
+                    const x = Math.random() * 256;
+                    const y = Math.random() * 256;
+                    const r = 3 + Math.random() * 18;
+                    const lum = Math.floor(35 + Math.random() * 185);
+                    const grad = ctx.createRadialGradient(x, y, 1, x, y, r);
+                    grad.addColorStop(0, `rgb(${lum},${lum},${lum})`);
+                    grad.addColorStop(1, 'rgba(128,128,128,0)');
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(x, y, r, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                const tex = new THREE.CanvasTexture(canvas);
+                tex.wrapS = THREE.RepeatWrapping;
+                tex.wrapT = THREE.RepeatWrapping;
+                return tex;
+            }
+
+            static createTNTLabelTexture() {
+                const canvas = document.createElement('canvas');
+                canvas.width = 512;
+                canvas.height = 256;
+                const ctx = canvas.getContext('2d');
+
+                ctx.fillStyle = '#991b1b';
+                ctx.fillRect(0, 0, 512, 256);
+
+                ctx.fillStyle = '#fef3c7';
+                ctx.fillRect(0, 76, 512, 104);
+                ctx.fillStyle = '#111827';
+                ctx.fillRect(0, 76, 512, 8);
+                ctx.fillRect(0, 172, 512, 8);
+
+                ctx.fillStyle = '#dc2626';
+                ctx.font = '900 66px "Chakra Petch", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('🧨 TNT 🧨', 135, 130);
+                ctx.fillText('🧨 TNT 🧨', 390, 130);
+
+                const tex = new THREE.CanvasTexture(canvas);
+                tex.colorSpace = THREE.SRGBColorSpace;
+                return tex;
+            }
+
+            static createMysteryBagTexture() {
+                const canvas = document.createElement('canvas');
+                canvas.width = 256;
+                canvas.height = 256;
+                const ctx = canvas.getContext('2d');
+
+                ctx.fillStyle = '#c28e53';
+                ctx.fillRect(0, 0, 256, 256);
+
+                ctx.strokeStyle = 'rgba(65, 40, 15, 0.25)';
+                ctx.lineWidth = 2;
+                for (let i = 0; i < 256; i += 6) {
+                    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 256); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(256, i); ctx.stroke();
+                }
+
+                ctx.fillStyle = '#fbbf24';
+                ctx.strokeStyle = '#451a03';
+                ctx.lineWidth = 6;
+                ctx.font = '900 120px "Chakra Petch", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.strokeText('?', 128, 140);
+                ctx.fillText('?', 128, 140);
+
+                const tex = new THREE.CanvasTexture(canvas);
+                tex.colorSpace = THREE.SRGBColorSpace;
+                return tex;
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 3. 3D MINER CHARACTER ("ÔNG GIÀ ĐÀO VÀNG 3D" AT THE TOP OF THE MINE)
+         * ============================================================================
+         */
+        class MinerCharacter3D {
+            constructor(scene, position) {
+                this.root = new THREE.Group();
+                this.root.position.copy(position);
+                this.root.scale.setScalar(1.35); // Scaled up so Miner reaches y = 6.2 and is unmistakable
+                this.root.visible = true;
+                scene.add(this.root);
+
+                this.buildCharacterMesh();
+            }
+
+            buildCharacterMesh() {
+                const skinMat = new THREE.MeshStandardMaterial({ color: 0xf4bfa1, roughness: 0.5 });
+                const rosyMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.45 });
+                const beardMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.7 });
+                const shirtMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.6 });
+                const denimMat = new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.55 });
+                const hatMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.35, roughness: 0.22 });
+                const leatherMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.5 });
+                const goldMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.95, roughness: 0.18 });
+                const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.8 });
+                const tntRedMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0x450a0a, roughness: 0.4 });
+
+                // Seated Legs & Work Boots extending forward onto the Winch Rig
+                [-0.26, 0.26].forEach(xOff => {
+                    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.48, 8, 12), denimMat);
+                    leg.position.set(xOff, 0.48, 0.35);
+                    leg.rotation.x = Math.PI / 2.3;
+                    this.root.add(leg);
+
+                    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.28, 0.38), leatherMat);
+                    boot.position.set(xOff, 0.36, 0.72);
+                    this.root.add(boot);
+                });
+
+                // Wooden Crate of Red TNT Sticks right beside the Miner
+                const tntCrate = new THREE.Group();
+                tntCrate.position.set(-1.35, 0.42, 0.15);
+                const crateBox = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.52, 0.62), woodMat);
+                tntCrate.add(crateBox);
+                for (let i = -1; i <= 1; i++) {
+                    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.58, 10), tntRedMat);
+                    stick.position.set(i * 0.18, 0.28, 0);
+                    stick.rotation.z = i * 0.08;
+                    tntCrate.add(stick);
+                }
+                this.root.add(tntCrate);
+
+                // Upper Body Pivot (Leans forward/back when launching or pulling heavy loads)
+                this.torsoPivot = new THREE.Group();
+                this.torsoPivot.position.set(0, 0.55, 0);
+                this.root.add(this.torsoPivot);
+
+                // Torso (Red Miner Flannel Shirt + Blue Denim Overalls)
+                const torsoMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.54, 0.62, 1.25, 16), shirtMat);
+                torsoMesh.position.y = 0.62;
+                torsoMesh.castShadow = true;
+                this.torsoPivot.add(torsoMesh);
+
+                const overallsBib = new THREE.Mesh(new THREE.CylinderGeometry(0.56, 0.64, 0.82, 16), denimMat);
+                overallsBib.position.y = 0.42;
+                this.torsoPivot.add(overallsBib);
+
+                // Overalls Straps & Brass Buttons
+                [-0.25, 0.25].forEach(xOff => {
+                    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.92, 0.76), denimMat);
+                    strap.position.set(xOff, 0.78, 0.08);
+                    this.torsoPivot.add(strap);
+
+                    const btn = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 10), goldMat);
+                    btn.position.set(xOff, 0.74, 0.52);
+                    this.torsoPivot.add(btn);
+                });
+
+                // Head Group
+                this.headGroup = new THREE.Group();
+                this.headGroup.position.set(0, 1.52, 0.06);
+                this.torsoPivot.add(this.headGroup);
+
+                // Face Sphere
+                const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.52, 20, 20), skinMat);
+                headMesh.castShadow = true;
+                this.headGroup.add(headMesh);
+
+                // Big Rosy Miner Nose
+                const nose = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 12), rosyMat);
+                nose.position.set(0, 0.02, 0.52);
+                this.headGroup.add(nose);
+
+                // Expressive Eyes & White Eyebrows
+                const eyeMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+                [-0.19, 0.19].forEach(xOff => {
+                    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.068, 10, 10), eyeMat);
+                    eye.position.set(xOff, 0.14, 0.47);
+                    this.headGroup.add(eye);
+
+                    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.065, 0.09), beardMat);
+                    brow.position.set(xOff, 0.26, 0.48);
+                    brow.rotation.z = xOff < 0 ? 0.14 : -0.14;
+                    this.headGroup.add(brow);
+                });
+
+                // Iconic Big Bushy White/Silver Miner Beard & Mustache
+                const beardMain = new THREE.Mesh(new THREE.SphereGeometry(0.48, 16, 16), beardMat);
+                beardMain.scale.set(1.12, 1.18, 0.88);
+                beardMain.position.set(0, -0.26, 0.25);
+                this.headGroup.add(beardMain);
+
+                const mustacheL = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.24, 8, 8), beardMat);
+                mustacheL.position.set(-0.16, -0.09, 0.5);
+                mustacheL.rotation.z = 1.25;
+                this.headGroup.add(mustacheL);
+
+                const mustacheR = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.24, 8, 8), beardMat);
+                mustacheR.position.set(0.16, -0.09, 0.5);
+                mustacheR.rotation.z = -1.25;
+                this.headGroup.add(mustacheR);
+
+                // Yellow Miner Hard Hat + Glowing Headlamp (PointLight + Emissive Lens)
+                const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.72, 0.08, 24), hatMat);
+                hatBrim.position.set(0, 0.34, 0.04);
+                this.headGroup.add(hatBrim);
+
+                const hatDome = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.56, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.55),
+                    hatMat
+                );
+                hatDome.position.set(0, 0.32, 0);
+                this.headGroup.add(hatDome);
+
+                const lampMount = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.18, 14), leatherMat);
+                lampMount.rotation.x = Math.PI / 2;
+                lampMount.position.set(0, 0.55, 0.52);
+                this.headGroup.add(lampMount);
+
+                const lampBulb = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.13, 12, 12),
+                    new THREE.MeshBasicMaterial({ color: 0xfef08a })
+                );
+                lampBulb.position.set(0, 0.55, 0.61);
+                this.headGroup.add(lampBulb);
+
+                this.helmetLight = new THREE.PointLight(0xfff4c2, 3.2, 10, 1.5);
+                this.helmetLight.position.set(0, 0.55, 0.85);
+                this.headGroup.add(this.helmetLight);
+
+                // Sweat / Heavy Strain Indicator above Helmet (Visible when pulling heavy rock/gold)
+                this.strainBadge = new THREE.Group();
+                this.strainBadge.position.set(0.68, 0.72, 0.3);
+                const dropMesh = new THREE.Mesh(
+                    new THREE.ConeGeometry(0.12, 0.32, 10),
+                    new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+                );
+                this.strainBadge.add(dropMesh);
+                this.strainBadge.visible = false;
+                this.headGroup.add(this.strainBadge);
+
+                // Articulated Right Arm (Cranks the Winch & Throws Dynamite)
+                this.rightArmPivot = new THREE.Group();
+                this.rightArmPivot.position.set(0.68, 1.05, 0);
+                this.torsoPivot.add(this.rightArmPivot);
+
+                const rArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.62, 8, 12), shirtMat);
+                rArm.position.set(0.1, -0.3, 0.24);
+                rArm.rotation.x = -0.75;
+                this.rightArmPivot.add(rArm);
+
+                const rGlove = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 12), leatherMat);
+                rGlove.position.set(0.12, -0.54, 0.54);
+                this.rightArmPivot.add(rGlove);
+
+                // Articulated Left Arm (Cranks the Winch alongside Right Arm)
+                this.leftArmPivot = new THREE.Group();
+                this.leftArmPivot.position.set(-0.68, 1.05, 0);
+                this.torsoPivot.add(this.leftArmPivot);
+
+                const lArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.62, 8, 12), shirtMat);
+                lArm.position.set(-0.1, -0.3, 0.24);
+                lArm.rotation.x = -0.75;
+                this.leftArmPivot.add(lArm);
+
+                const lGlove = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 12), leatherMat);
+                lGlove.position.set(-0.12, -0.54, 0.54);
+                this.leftArmPivot.add(lGlove);
+
+                this.throwAnimTimer = 0;
+            }
+
+            triggerThrowAnimation() {
+                this.throwAnimTimer = 0.48;
+            }
+
+            update(dt, elapsed, hookState, swingAngle, attachedItem, returnSpeed) {
+                // Ensure Miner is ALWAYS visible in every state
+                this.root.visible = true;
+
+                if (this.throwAnimTimer > 0) {
+                    this.throwAnimTimer -= dt;
+                    this.rightArmPivot.rotation.x = -Math.sin((this.throwAnimTimer / 0.48) * Math.PI) * 2.1;
+                }
+
+                if (hookState === 'SWINGING') {
+                    this.strainBadge.visible = false;
+                    // Miner rhythmically leans with the pendulum and watches the hook
+                    this.headGroup.rotation.y = THREE.MathUtils.lerp(this.headGroup.rotation.y, swingAngle * 0.55, dt * 8);
+                    this.headGroup.rotation.x = THREE.MathUtils.lerp(this.headGroup.rotation.x, 0.18, dt * 6);
+                    this.torsoPivot.rotation.x = Math.sin(elapsed * 2.5) * 0.05;
+                    this.torsoPivot.rotation.z = swingAngle * 0.14;
+                    if (this.throwAnimTimer <= 0) {
+                        this.rightArmPivot.rotation.x = Math.sin(elapsed * 2.5) * 0.12;
+                    }
+                    this.leftArmPivot.rotation.x = -Math.sin(elapsed * 2.5) * 0.12;
+                } else if (hookState === 'LAUNCHING') {
+                    this.strainBadge.visible = false;
+                    // Miner releases brake lever and leans forward watching the hook dive
+                    this.torsoPivot.rotation.x = THREE.MathUtils.lerp(this.torsoPivot.rotation.x, 0.28, dt * 10);
+                    this.headGroup.rotation.x = THREE.MathUtils.lerp(this.headGroup.rotation.x, 0.36, dt * 10);
+                    if (this.throwAnimTimer <= 0) {
+                        this.rightArmPivot.rotation.x += dt * 14;
+                    }
+                    this.leftArmPivot.rotation.x += dt * 14;
+                } else if (hookState === 'RETURNING') {
+                    const isHeavy = attachedItem && attachedItem.userData.mass >= 4.0;
+                    const crankSpeed = Math.max(4.0, returnSpeed * 1.05);
+                    if (this.throwAnimTimer <= 0) {
+                        this.rightArmPivot.rotation.x -= dt * crankSpeed;
+                    }
+                    this.leftArmPivot.rotation.x -= dt * crankSpeed;
+
+                    this.strainBadge.visible = Boolean(isHeavy);
+                    if (isHeavy) {
+                        this.strainBadge.position.y = 0.72 + Math.sin(elapsed * 18) * 0.08;
+                        // Heavy load: Miner leans back straining hard!
+                        this.torsoPivot.rotation.x = -0.26 + Math.sin(elapsed * 24) * 0.06;
+                        this.headGroup.rotation.z = Math.sin(elapsed * 20) * 0.12;
+                        this.headGroup.rotation.x = -0.08;
+                    } else {
+                        // Fast/Light load: Miner cranks enthusiastically
+                        this.torsoPivot.rotation.x = 0.1 + Math.sin(elapsed * 12) * 0.05;
+                        this.headGroup.rotation.z = 0;
+                        this.headGroup.rotation.x = 0.22;
+                    }
+                }
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 4. ITEM DATA SPECIFICATION & 3D MESH FACTORY
+         * ============================================================================
+         */
+        const ITEM_SPECS = {
+            GOLD_SMALL:  { type: 'GOLD_SMALL',  name: 'Vàng Nhỏ',         mass: 1.15, baseValue: 100, radius: 0.52, isExplosive: false },
+            GOLD_MEDIUM: { type: 'GOLD_MEDIUM', name: 'Vàng Vừa',         mass: 2.35, baseValue: 250, radius: 0.84, isExplosive: false },
+            GOLD_LARGE:  { type: 'GOLD_LARGE',  name: 'Vàng Nguyên Khối', mass: 4.60, baseValue: 500, radius: 1.25, isExplosive: false },
+            ROCK_SMALL:  { type: 'ROCK_SMALL',  name: 'Đá Nhỏ',           mass: 3.40, baseValue: 25,  radius: 0.68, isExplosive: false },
+            ROCK_LARGE:  { type: 'ROCK_LARGE',  name: 'Đá Tảng Lớn',      mass: 6.00, baseValue: 60,  radius: 1.10, isExplosive: false },
+            DIAMOND:     { type: 'DIAMOND',     name: 'Kim Cương',        mass: 0.80, baseValue: 650, radius: 0.52, isExplosive: false },
+            MYSTERY_BAG: { type: 'MYSTERY_BAG', name: 'Túi Bí Ẩn',        mass: 1.90, baseValue: 300, radius: 0.78, isExplosive: false },
+            TNT:         { type: 'TNT',         name: 'Thùng Thuốc Nổ TNT', mass: 1.0, baseValue: 10, radius: 0.82, isExplosive: true, explosionRadius: 3.8 }
+        };
+
+        class Item3DFactory {
+            constructor() {
+                this.bumpMap = PBRTextureGenerator.createStoneBumpMap();
+                this.tntMap = PBRTextureGenerator.createTNTLabelTexture();
+                this.bagMap = PBRTextureGenerator.createMysteryBagTexture();
+
+                this.goldMaterial = new THREE.MeshStandardMaterial({
+                    color: 0xffd700,
+                    metalness: 1.0,
+                    roughness: 0.16,
+                    bumpMap: this.bumpMap,
+                    bumpScale: 0.12,
+                    emissive: 0x452800,
+                    emissiveIntensity: 0.28
+                });
+
+                this.rockMaterial = new THREE.MeshStandardMaterial({
+                    color: 0x646870,
+                    metalness: 0.1,
+                    roughness: 0.86,
+                    bumpMap: this.bumpMap,
+                    bumpScale: 0.25,
+                    flatShading: true
+                });
+
+                this.diamondMaterial = new THREE.MeshPhysicalMaterial({
+                    color: 0x7dd3fc,
+                    metalness: 0.1,
+                    roughness: 0.02,
+                    clearcoat: 1.0,
+                    reflectivity: 1.0,
+                    emissive: 0x38bdf8,
+                    emissiveIntensity: 0.85,
+                    flatShading: true
+                });
+
+                this.bagMaterial = new THREE.MeshStandardMaterial({
+                    map: this.bagMap,
+                    bumpMap: this.bumpMap,
+                    bumpScale: 0.06,
+                    roughness: 0.82
+                });
+
+                this.tntBodyMat = new THREE.MeshStandardMaterial({
+                    map: this.tntMap,
+                    roughness: 0.5,
+                    metalness: 0.15
+                });
+
+                this.ironBandMat = new THREE.MeshStandardMaterial({
+                    color: 0x27272a,
+                    metalness: 0.88,
+                    roughness: 0.3
+                });
+            }
+
+            createSculptedGeometry(radius, detail, irregularity = 0.24, seed = 1) {
+                const geom = new THREE.IcosahedronGeometry(radius, detail);
+                const pos = geom.attributes.position;
+                const v = new THREE.Vector3();
+                for (let i = 0; i < pos.count; i++) {
+                    v.fromBufferAttribute(pos, i);
+                    const n = Math.sin(v.x * 3.1 + seed) * Math.cos(v.y * 2.7 + seed) * Math.sin(v.z * 3.5 + seed);
+                    v.multiplyScalar(1 + n * irregularity);
+                    v.z *= 0.82;
+                    pos.setXYZ(i, v.x, v.y, v.z);
+                }
+                geom.computeVertexNormals();
+                return geom;
+            }
+
+            createItemMesh(specKey) {
+                const spec = { ...ITEM_SPECS[specKey] };
+                const group = new THREE.Group();
+                const seed = Math.random() * 100;
+
+                if (specKey.startsWith('GOLD_')) {
+                    const geom = this.createSculptedGeometry(spec.radius, 2, 0.22, seed);
+                    const mesh = new THREE.Mesh(geom, this.goldMaterial);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    group.add(mesh);
+
+                    if (specKey !== 'GOLD_SMALL') {
+                        const subGeom = new THREE.DodecahedronGeometry(spec.radius * 0.45, 0);
+                        const subMesh = new THREE.Mesh(subGeom, this.goldMaterial);
+                        subMesh.position.set(spec.radius * 0.44, spec.radius * 0.3, spec.radius * 0.2);
+                        group.add(subMesh);
+                    }
+                } else if (specKey.startsWith('ROCK_')) {
+                    const geom = this.createSculptedGeometry(spec.radius, 1, 0.3, seed);
+                    const mesh = new THREE.Mesh(geom, this.rockMaterial);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    group.add(mesh);
+                } else if (specKey === 'DIAMOND') {
+                    const geom = new THREE.OctahedronGeometry(spec.radius, 1);
+                    const mesh = new THREE.Mesh(geom, this.diamondMaterial);
+                    mesh.scale.set(1.0, 1.2, 1.0);
+                    group.add(mesh);
+
+                    const core = new THREE.Mesh(
+                        new THREE.OctahedronGeometry(spec.radius * 0.52, 0),
+                        new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true })
+                    );
+                    group.add(core);
+                } else if (specKey === 'MYSTERY_BAG') {
+                    spec.mass = 1.3 + Math.random() * 2.2;
+                    const bodyGeom = new THREE.SphereGeometry(spec.radius * 0.88, 20, 16);
+                    bodyGeom.scale(1.0, 1.06, 0.82);
+                    const body = new THREE.Mesh(bodyGeom, this.bagMaterial);
+                    body.rotation.y = -Math.PI / 2;
+                    group.add(body);
+
+                    const rope = new THREE.Mesh(
+                        new THREE.TorusGeometry(spec.radius * 0.35, 0.09, 10, 20),
+                        this.goldMaterial
+                    );
+                    rope.position.y = spec.radius * 0.74;
+                    rope.rotation.x = Math.PI / 2;
+                    group.add(rope);
+                } else if (specKey === 'TNT') {
+                    const barrel = new THREE.Mesh(
+                        new THREE.CylinderGeometry(spec.radius * 0.72, spec.radius * 0.72, spec.radius * 1.62, 20),
+                        this.tntBodyMat
+                    );
+                    group.add(barrel);
+
+                    [-0.54, 0.54].forEach(yOff => {
+                        const hoop = new THREE.Mesh(
+                            new THREE.TorusGeometry(spec.radius * 0.74, 0.06, 10, 24),
+                            this.ironBandMat
+                        );
+                        hoop.position.y = yOff * spec.radius;
+                        hoop.rotation.x = Math.PI / 2;
+                        group.add(hoop);
+                    });
+
+                    const sparkMesh = new THREE.Mesh(
+                        new THREE.SphereGeometry(0.16, 8, 8),
+                        new THREE.MeshBasicMaterial({ color: 0xffaa00 })
+                    );
+                    sparkMesh.position.set(0, spec.radius * 1.05, 0);
+                    sparkMesh.name = 'tntFuseSpark';
+                    group.add(sparkMesh);
+                }
+
+                group.userData = { ...spec, isDetonated: false };
+                return group;
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 5. OBJECT POOLING SYSTEM FOR 3D VFX
+         * ============================================================================
+         */
+        class VFXPoolManager {
+            constructor(scene) {
+                this.scene = scene;
+                this.activeParticles = [];
+                this.particlePool = [];
+                this.shockwavePool = [];
+                this.activeShockwaves = [];
+                this.sharedGeom = new THREE.DodecahedronGeometry(0.16, 0);
+                this.initPools(130);
+            }
+
+            initPools(count) {
+                for (let i = 0; i < count; i++) {
+                    const mat = new THREE.MeshStandardMaterial({
+                        color: 0xffaa00,
+                        emissive: 0xff6600,
+                        emissiveIntensity: 1.1,
+                        roughness: 0.35
+                    });
+                    const mesh = new THREE.Mesh(this.sharedGeom, mat);
+                    mesh.visible = false;
+                    this.scene.add(mesh);
+                    this.particlePool.push({
+                        mesh,
+                        velocity: new THREE.Vector3(),
+                        rotVel: new THREE.Vector3(),
+                        life: 0,
+                        maxLife: 1,
+                        gravity: 12
+                    });
+                }
+
+                for (let i = 0; i < 6; i++) {
+                    const ring = new THREE.Mesh(
+                        new THREE.RingGeometry(0.4, 0.9, 32),
+                        new THREE.MeshBasicMaterial({
+                            color: 0xff9900,
+                            side: THREE.DoubleSide,
+                            transparent: true,
+                            opacity: 0.95
+                        })
+                    );
+                    ring.visible = false;
+                    this.scene.add(ring);
+                    this.shockwavePool.push({ mesh: ring, life: 0, maxLife: 0.45, maxRadius: 5.8 });
+                }
+            }
+
+            spawnVFX(type, position) {
+                let count = 16, speed = 6.5, colorHex = 0xffe066, emissiveHex = 0xff8800, scale = 1.0;
+                if (type === 'ImpactSparks') {
+                    count = 14; speed = 8.0; colorHex = 0xfff3b0; emissiveHex = 0xf59e0b; scale = 0.8;
+                } else if (type === 'DustCloud') {
+                    count = 10; speed = 3.5; colorHex = 0x78716c; emissiveHex = 0x1c1917; scale = 1.3;
+                } else if (type === 'RockDebris') {
+                    count = 18; speed = 9.0; colorHex = 0x57534e; emissiveHex = 0x292524; scale = 1.4;
+                } else if (type === 'TNTExplosion') {
+                    count = 36; speed = 15.5; colorHex = 0xff6600; emissiveHex = 0xff2200; scale = 1.8;
+                    this.spawnShockwave(position);
+                }
+
+                for (let i = 0; i < count; i++) {
+                    if (this.particlePool.length === 0) break;
+                    const p = this.particlePool.pop();
+                    p.mesh.visible = true;
+                    p.mesh.position.copy(position);
+                    p.mesh.scale.setScalar(scale * (0.6 + Math.random() * 0.7));
+                    p.mesh.material.color.setHex(colorHex);
+                    p.mesh.material.emissive.setHex(emissiveHex);
+
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.random() * Math.PI;
+                    const spd = speed * (0.4 + Math.random() * 0.8);
+                    p.velocity.set(
+                        Math.sin(phi) * Math.cos(theta) * spd,
+                        Math.cos(phi) * spd + 2.5,
+                        Math.sin(phi) * Math.sin(theta) * spd * 0.5
+                    );
+                    p.rotVel.set(Math.random() * 8, Math.random() * 8, Math.random() * 8);
+                    p.maxLife = 0.45 + Math.random() * 0.45;
+                    p.life = p.maxLife;
+                    this.activeParticles.push(p);
+                }
+            }
+
+            spawnShockwave(position) {
+                if (this.shockwavePool.length === 0) return;
+                const sw = this.shockwavePool.pop();
+                sw.mesh.visible = true;
+                sw.mesh.position.copy(position);
+                sw.mesh.position.z += 0.5;
+                sw.mesh.scale.setScalar(0.2);
+                sw.mesh.material.opacity = 0.95;
+                sw.life = sw.maxLife;
+                this.activeShockwaves.push(sw);
+            }
+
+            update(dt) {
+                for (let i = this.activeParticles.length - 1; i >= 0; i--) {
+                    const p = this.activeParticles[i];
+                    p.life -= dt;
+                    if (p.life <= 0) {
+                        p.mesh.visible = false;
+                        this.activeParticles.splice(i, 1);
+                        this.particlePool.push(p);
+                        continue;
+                    }
+                    p.velocity.y -= p.gravity * dt;
+                    p.mesh.position.addScaledVector(p.velocity, dt);
+                    p.mesh.rotation.x += p.rotVel.x * dt;
+                    p.mesh.rotation.y += p.rotVel.y * dt;
+                }
+
+                for (let i = this.activeShockwaves.length - 1; i >= 0; i--) {
+                    const sw = this.activeShockwaves[i];
+                    sw.life -= dt;
+                    if (sw.life <= 0) {
+                        sw.mesh.visible = false;
+                        this.activeShockwaves.splice(i, 1);
+                        this.shockwavePool.push(sw);
+                        continue;
+                    }
+                    const progress = 1 - sw.life / sw.maxLife;
+                    sw.mesh.scale.setScalar(0.5 + progress * sw.maxRadius);
+                    sw.mesh.material.opacity = (1 - progress) * 0.9;
+                }
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 6. CAMERA FEEDBACK & CINEMATIC MODE SWITCHER (HOME SHOWCASE vs GAMEPLAY)
+         * ============================================================================
+         */
+        class CameraDirector {
+            constructor(camera) {
+                this.camera = camera;
+                this.mode = 'HOME'; // HOME (Zoomed on Miner) | PLAYING (Full Mine + Miner at top)
+                this.currentPos = new THREE.Vector3(0, 4.4, 9.5);
+                this.currentLook = new THREE.Vector3(0, 4.0, 0);
+
+                this.targetPos = new THREE.Vector3();
+                this.targetLook = new THREE.Vector3();
+                this.targetFov = 40;
+
+                this.shakeIntensity = 0;
+                this.shakeTimer = 0;
+                this.strainOffset = new THREE.Vector3();
+                this.setMode('HOME');
+            }
+
+            setMode(mode) {
+                this.mode = mode;
+                if (mode === 'HOME') {
+                    // Close-up showcase of the 3D Miner Character at (0, 3.6, 0) in upper half of screen
+                    this.targetPos.set(0, 4.4, 9.5);
+                    this.targetLook.set(0, 4.0, 0);
+                    this.targetFov = 40;
+                } else {
+                    // CRITICAL FIX: Frames entire vertical range y = [-8.8, +7.0] so the 3D Miner
+                    // at y = 3.6..6.2 stays 100% visible in the top 25% of the screen during PLAYING!
+                    this.targetPos.set(0, -0.5, 21.5);
+                    this.targetLook.set(0, -0.8, 0);
+                    this.targetFov = 46;
+                }
+            }
+
+            triggerShake(intensity = 1.2, duration = 0.35) {
+                this.shakeIntensity = Math.max(this.shakeIntensity, intensity);
+                this.shakeTimer = Math.max(this.shakeTimer, duration);
+            }
+
+            triggerContinuousStrain(amount = 0.08) {
+                this.strainOffset.set(
+                    (Math.random() - 0.5) * amount,
+                    (Math.random() - 0.5) * amount,
+                    0
+                );
+            }
+
+            setHighValueZoom(enabled) {
+                if (this.mode !== 'PLAYING') return;
+                this.targetFov = enabled ? 43.5 : 46;
+            }
+
+            update(dt) {
+                if (Math.abs(this.camera.fov - this.targetFov) > 0.05) {
+                    this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, this.targetFov, dt * 4.5);
+                    this.camera.updateProjectionMatrix();
+                }
+
+                this.currentPos.lerp(this.targetPos, dt * 4.5);
+                this.currentLook.lerp(this.targetLook, dt * 4.5);
+
+                const finalPos = this.currentPos.clone();
+                if (this.shakeTimer > 0) {
+                    this.shakeTimer -= dt;
+                    finalPos.x += (Math.random() - 0.5) * this.shakeIntensity;
+                    finalPos.y += (Math.random() - 0.5) * this.shakeIntensity;
+                    if (this.shakeTimer <= 0) this.shakeIntensity = 0;
+                }
+
+                finalPos.add(this.strainOffset);
+                this.strainOffset.multiplyScalar(0.8);
+
+                this.camera.position.copy(finalPos);
+                this.camera.lookAt(this.currentLook);
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 7. 3D HOOK, CRANE CART & MINER INTEGRATION (HookController)
+         * ============================================================================
+         */
+        class HookController {
+            constructor(scene, vfxPool, cameraDirector, sound, minerCharacter, onItemRetrieved) {
+                this.scene = scene;
+                this.vfxPool = vfxPool;
+                this.cameraDirector = cameraDirector;
+                this.sound = sound;
+                this.miner = minerCharacter;
+                this.onItemRetrieved = onItemRetrieved;
+
+                // Hook Pivot placed right at the Winch Boom Pulley in front of the Miner's hands (y = 3.3, z = 0)
+                this.pivotPos = new THREE.Vector3(0, 3.3, 0);
+                this.maxSwingAngle = THREE.MathUtils.degToRad(65);
+                this.swingFrequency = 1.65;
+                this.baseLaunchSpeed = 14.5;
+                this.baseReturnSpeed = 12.0;
+                this.maxReachDistance = 13.2;
+                this.restLength = 1.15;
+
+                this.state = 'SWINGING';
+                this.swingTime = 0;
+                this.currentAngle = 0;
+                this.currentLength = this.restLength;
+                this.attachedItem = null;
+                this.dynamiteProjectile = null;
+
+                this.claws = [];
+                this.clawOpenAngle = 0.22;
+                this.targetClawAngle = 0.22;
+
+                this.buildWinchCartAndHook();
+            }
+
+            buildWinchCartAndHook() {
+                const steelMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.92, roughness: 0.2 });
+                const darkIronMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.85, roughness: 0.35 });
+                const hazardMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.4, roughness: 0.3 });
+                const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.75 });
+
+                // Miner's Wooden Cart, Spoked Wheel & A-Frame Boom at Top-Center (y = 3.6)
+                this.cartGroup = new THREE.Group();
+                this.cartGroup.position.set(0, 3.6, 0);
+                this.scene.add(this.cartGroup);
+
+                const cartDeck = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.34, 2.2), woodMat);
+                cartDeck.position.set(0, 0.18, -0.35);
+                cartDeck.castShadow = true;
+                this.cartGroup.add(cartDeck);
+
+                // 4 Iron Mine Cart Wheels on the Railway Track
+                [-1.35, 1.35].forEach(xOff => {
+                    [-1.05, 0.35].forEach(zOff => {
+                        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.16, 16), darkIronMat);
+                        wheel.rotation.z = Math.PI / 2;
+                        wheel.position.set(xOff, 0.02, zOff);
+                        this.cartGroup.add(wheel);
+                    });
+                });
+
+                // A-Frame Steel Boom extending forward to hold the Cable Pulley at (0, 3.3, 0)
+                [-0.55, 0.55].forEach(xOff => {
+                    const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.08, 1.35, 10), darkIronMat);
+                    strut.position.set(xOff * 0.6, 0.22, -0.15);
+                    strut.rotation.x = 0.65;
+                    strut.rotation.z = xOff < 0 ? -0.25 : 0.25;
+                    this.cartGroup.add(strut);
+                });
+
+                // Front Winch Drum Cylinder right in front of the Miner's hands
+                const drumGeom = new THREE.CylinderGeometry(0.48, 0.48, 1.45, 20);
+                drumGeom.rotateZ(Math.PI / 2);
+                this.winchDrum = new THREE.Mesh(drumGeom, darkIronMat);
+                this.winchDrum.position.set(0, 0.68, 0.05);
+                this.cartGroup.add(this.winchDrum);
+
+                // Rotating Spoked Winch Wheel & Crank Handle
+                this.winchGear = new THREE.Group();
+                this.winchGear.position.set(0.88, 0.68, 0.05);
+                const rim = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.07, 10, 24), hazardMat);
+                rim.rotation.y = Math.PI / 2;
+                this.winchGear.add(rim);
+                for (let s = 0; s < 4; s++) {
+                    const spoke = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.2, 8), steelMat);
+                    spoke.rotation.x = (s * Math.PI) / 4;
+                    this.winchGear.add(spoke);
+                }
+                this.cartGroup.add(this.winchGear);
+
+                // Rotating Hook Pivot at (0, 3.3, 0)
+                this.pivotGroup = new THREE.Group();
+                this.pivotGroup.position.copy(this.pivotPos);
+                this.scene.add(this.pivotGroup);
+
+                // Pulley Sheave Wheel at Hook Pivot
+                const pulleyWheel = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.16, 16), hazardMat);
+                pulleyWheel.rotation.x = Math.PI / 2;
+                this.pivotGroup.add(pulleyWheel);
+
+                // Steel Cable
+                const cableGeom = new THREE.CylinderGeometry(0.055, 0.055, 1, 8);
+                cableGeom.translate(0, -0.5, 0);
+                this.cableMesh = new THREE.Mesh(cableGeom, steelMat);
+                this.pivotGroup.add(this.cableMesh);
+
+                // 3D Hook Head & 3 Articulated Claws
+                this.hookHead = new THREE.Group();
+                this.hookHead.position.set(0, -this.restLength, 0);
+                this.pivotGroup.add(this.hookHead);
+
+                const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.32, 0.45, 16), hazardMat);
+                this.hookHead.add(collar);
+
+                for (let i = 0; i < 3; i++) {
+                    const clawMount = new THREE.Group();
+                    clawMount.rotation.y = (i * Math.PI * 2) / 3;
+
+                    const clawPivot = new THREE.Group();
+                    clawPivot.position.set(0.2, -0.16, 0);
+
+                    const upperBone = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.055, 0.52, 8), steelMat);
+                    upperBone.position.set(0.1, -0.22, 0);
+                    upperBone.rotation.z = 0.35;
+                    clawPivot.add(upperBone);
+
+                    const lowerTalon = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.5, 8), steelMat);
+                    lowerTalon.position.set(0.06, -0.54, 0);
+                    lowerTalon.rotation.z = Math.PI - 0.55;
+                    clawPivot.add(lowerTalon);
+
+                    clawMount.add(clawPivot);
+                    this.hookHead.add(clawMount);
+                    this.claws.push(clawPivot);
+                }
+
+                this.grabAnchor = new THREE.Group();
+                this.grabAnchor.position.set(0, -0.62, 0);
+                this.hookHead.add(this.grabAnchor);
+
+                // Aiming Laser Line
+                const laserGeom = new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(0, -0.6, 0),
+                    new THREE.Vector3(0, -8.5, 0)
+                ]);
+                this.aimLaser = new THREE.Line(
+                    laserGeom,
+                    new THREE.LineBasicMaterial({ color: 0xfde047, transparent: true, opacity: 0.4 })
+                );
+                this.hookHead.add(this.aimLaser);
+
+                // Hook PointLight
+                this.hookLight = new THREE.PointLight(0xffddaa, 3.0, 10, 1.4);
+                this.hookLight.position.set(0, -0.35, 1.0);
+                this.hookHead.add(this.hookLight);
+            }
+
+            launch() {
+                if (this.state !== 'SWINGING') return false;
+                this.state = 'LAUNCHING';
+                this.targetClawAngle = 0.65;
+                this.aimLaser.visible = false;
+                this.sound.playLaunch();
+                return true;
+            }
+
+            getHookWorldPosition(target = new THREE.Vector3()) {
+                return this.grabAnchor.getWorldPosition(target);
+            }
+
+            calculateReturnVelocity(buffs) {
+                let speed = this.baseReturnSpeed;
+                if (buffs.strength) speed *= 1.85;
+                if (this.attachedItem) {
+                    const mass = Math.max(0.5, this.attachedItem.userData.mass);
+                    speed /= mass;
+                }
+                return speed;
+            }
+
+            throwDynamiteOnAttachedItem() {
+                if (this.state !== 'RETURNING' || !this.attachedItem || this.dynamiteProjectile) return false;
+
+                this.miner.triggerThrowAnimation();
+
+                const dynGroup = new THREE.Group();
+                const stick = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.16, 0.16, 0.75, 10),
+                    new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0x991b1b, emissiveIntensity: 0.5 })
+                );
+                dynGroup.add(stick);
+                this.pivotGroup.add(dynGroup);
+
+                this.dynamiteProjectile = {
+                    mesh: dynGroup,
+                    dist: 0.4,
+                    speed: 40.0
+                };
+                return true;
+            }
+
+            beginReturn(item) {
+                this.state = 'RETURNING';
+                this.attachedItem = item;
+                this.targetClawAngle = item ? 0.04 : 0.18;
+
+                if (item) {
+                    this.grabAnchor.add(item);
+                    item.position.set(0, -item.userData.radius * 0.55, 0);
+
+                    const isHighVal = item.userData.baseValue >= 500;
+                    this.sound.playHit(isHighVal);
+
+                    if (isHighVal) {
+                        this.hookLight.intensity = 5.5;
+                        this.cameraDirector.setHighValueZoom(true);
+                    }
+                }
+            }
+
+            resetHook() {
+                if (this.attachedItem) {
+                    this.grabAnchor.remove(this.attachedItem);
+                    this.attachedItem = null;
+                }
+                if (this.dynamiteProjectile) {
+                    this.pivotGroup.remove(this.dynamiteProjectile.mesh);
+                    this.dynamiteProjectile = null;
+                }
+                this.state = 'SWINGING';
+                this.currentLength = this.restLength;
+                this.hookHead.position.y = -this.currentLength;
+                this.cableMesh.scale.y = this.currentLength;
+                this.aimLaser.visible = true;
+                this.hookLight.intensity = 3.0;
+                this.cameraDirector.setHighValueZoom(false);
+            }
+
+            update(dt, elapsed, itemsList, buffs, triggerTNTExplosionFn, updateMinerBubbleFn) {
+                this.clawOpenAngle = THREE.MathUtils.lerp(this.clawOpenAngle, this.targetClawAngle, dt * 12);
+                for (let i = 0; i < this.claws.length; i++) {
+                    this.claws[i].rotation.z = this.clawOpenAngle;
+                }
+
+                // Dynamite sliding down cable with trailing sparks
+                if (this.dynamiteProjectile) {
+                    this.dynamiteProjectile.dist += this.dynamiteProjectile.speed * dt;
+                    this.dynamiteProjectile.mesh.position.set(0, -this.dynamiteProjectile.dist, 0);
+                    this.dynamiteProjectile.mesh.rotation.z += dt * 16;
+
+                    const sparkWorldPos = new THREE.Vector3();
+                    this.dynamiteProjectile.mesh.getWorldPosition(sparkWorldPos);
+                    if (Math.random() < 0.65) {
+                        this.vfxPool.spawnVFX('ImpactSparks', sparkWorldPos);
+                    }
+
+                    if (this.dynamiteProjectile.dist >= this.currentLength - 0.3) {
+                        const hitPos = this.getHookWorldPosition();
+                        this.vfxPool.spawnVFX('TNTExplosion', hitPos);
+                        this.vfxPool.spawnVFX('RockDebris', hitPos);
+                        this.cameraDirector.triggerShake(1.35, 0.35);
+                        this.sound.playExplosion();
+
+                        if (this.attachedItem) {
+                            this.grabAnchor.remove(this.attachedItem);
+                            this.attachedItem = null;
+                        }
+                        this.cameraDirector.setHighValueZoom(false);
+                        this.pivotGroup.remove(this.dynamiteProjectile.mesh);
+                        this.dynamiteProjectile = null;
+                        updateMinerBubbleFn('👷 Ông Thợ Mỏ: "Nổ tan xác tảng đá nặng rồi!"');
+                    }
+                }
+
+                const retSpeed = this.calculateReturnVelocity(buffs);
+                this.miner.update(dt, elapsed, this.state, this.currentAngle, this.attachedItem, retSpeed);
+
+                if (this.state === 'SWINGING') {
+                    this.swingTime += dt * this.swingFrequency;
+                    this.currentAngle = Math.sin(this.swingTime) * this.maxSwingAngle;
+                    this.pivotGroup.rotation.z = this.currentAngle;
+                } else if (this.state === 'LAUNCHING') {
+                    const launchSpd = this.baseLaunchSpeed * (buffs.magnet ? 1.25 : 1.0);
+                    const subSteps = 3;
+                    const stepDt = dt / subSteps;
+                    const hitPadding = buffs.magnet ? 0.48 : 0.34;
+
+                    for (let s = 0; s < subSteps; s++) {
+                        this.currentLength += launchSpd * stepDt;
+                        this.hookHead.position.y = -this.currentLength;
+                        this.cableMesh.scale.y = this.currentLength;
+                        this.winchDrum.rotation.x += stepDt * 12;
+                        this.winchGear.rotation.x += stepDt * 12;
+
+                        const hookWorldPos = this.getHookWorldPosition();
+
+                        // 2D XY plane distance check on Z=0 for 100% reliable collision
+                        for (let i = 0; i < itemsList.length; i++) {
+                            const item = itemsList[i];
+                            const dist = Math.hypot(hookWorldPos.x - item.position.x, hookWorldPos.y - item.position.y);
+                            if (dist <= item.userData.radius + hitPadding) {
+                                this.vfxPool.spawnVFX('ImpactSparks', hookWorldPos);
+                                if (item.userData.isExplosive) {
+                                    triggerTNTExplosionFn(item);
+                                    this.beginReturn(null);
+                                } else {
+                                    itemsList.splice(i, 1);
+                                    this.scene.remove(item);
+                                    this.beginReturn(item);
+                                    if (item.userData.mass >= 4.5) {
+                                        updateMinerBubbleFn('💦 Ông Thợ Mỏ: "Ái chà! Nặng quá, bấm [E] nếu muốn nổ bỏ!"');
+                                    } else if (item.userData.baseValue >= 500) {
+                                        updateMinerBubbleFn('🤩 Ông Thợ Mỏ: "Trúng mẻ lớn rồi bà con ơi!"');
+                                    }
+                                }
+                                return;
+                            }
+                        }
+
+                        if (
+                            this.currentLength >= this.maxReachDistance ||
+                            Math.abs(hookWorldPos.x) > 11.8 ||
+                            hookWorldPos.y < -8.4
+                        ) {
+                            this.vfxPool.spawnVFX('DustCloud', hookWorldPos);
+                            this.sound.playHit(false);
+                            this.beginReturn(null);
+                            return;
+                        }
+                    }
+                } else if (this.state === 'RETURNING') {
+                    this.currentLength = Math.max(this.restLength, this.currentLength - retSpeed * dt);
+                    this.hookHead.position.y = -this.currentLength;
+                    this.cableMesh.scale.y = this.currentLength;
+
+                    const speedNorm = Math.min(1.5, retSpeed / this.baseReturnSpeed);
+                    this.winchDrum.rotation.x -= dt * 8 * speedNorm;
+                    this.winchGear.rotation.x -= dt * 8 * speedNorm;
+                    this.sound.playWinchTick(speedNorm);
+
+                    if (this.attachedItem && this.attachedItem.userData.mass >= 4.5) {
+                        this.cameraDirector.triggerContinuousStrain(0.075);
+                    }
+
+                    if (this.currentLength <= this.restLength + 0.04) {
+                        const retrieved = this.attachedItem;
+                        this.resetHook();
+                        if (retrieved && this.onItemRetrieved) {
+                            this.onItemRetrieved(retrieved);
+                        }
+                    }
+                }
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 8. MAIN 3D GAME ARCHITECT & STATE MACHINE
+         * ============================================================================
+         */
+        class GoldMiner3DGame {
+            constructor() {
+                this.container = document.getElementById('canvas-container');
+                this.sound = new SoundEngine();
+
+                // Game States: HOME | SHOP | PLAYING | RESULT
+                this.state = 'HOME';
+                this.level = 1;
+                this.walletGold = 500; // $500 Starting Bonus so user can shop immediately!
+                this.targetScore = 1050;
+                this.remainingTime = 60;
+
+                // Player Inventory & Active Buffs
+                this.dynamiteCount = 2;
+                this.buffs = {
+                    strength: false,
+                    clover: false,
+                    polish: false,
+                    magnet: false
+                };
+
+                this.worldItems = [];
+                this.clock = new THREE.Clock();
+
+                this.initThreePBRScene();
+                this.buildOpenTopMineEnvironment3D();
+
+                // Create Visible 3D Miner Character sitting on his Winch Rig at (0, 3.6, -0.35)
+                this.minerCharacter = new MinerCharacter3D(this.scene, new THREE.Vector3(0, 3.6, -0.35));
+
+                this.itemFactory = new Item3DFactory();
+                this.vfxPool = new VFXPoolManager(this.scene);
+                this.cameraDirector = new CameraDirector(this.camera);
+                this.hookController = new HookController(
+                    this.scene,
+                    this.vfxPool,
+                    this.cameraDirector,
+                    this.sound,
+                    this.minerCharacter,
+                    (item) => this.handleItemScored(item)
+                );
+
+                this.spawnLevelItems(1);
+                this.bindEvents();
+                this.syncAllUI();
+
+                this.animate = this.animate.bind(this);
+                requestAnimationFrame(this.animate);
+            }
+
+            initThreePBRScene() {
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x0b0806);
+                this.scene.fog = new THREE.FogExp2(0x0b0806, 0.011);
+
+                this.camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.5, 120);
+
+                this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                this.renderer.toneMappingExposure = 1.25;
+                this.container.appendChild(this.renderer.domElement);
+
+                // PMREM Environment Map for realistic Gold & Metallic reflections
+                const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+                this.scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+
+                // UnrealBloomPass Post-Processing
+                this.composer = new EffectComposer(this.renderer);
+                this.composer.addPass(new RenderPass(this.scene, this.camera));
+                this.bloomPass = new UnrealBloomPass(
+                    new THREE.Vector2(window.innerWidth, window.innerHeight),
+                    0.42, // Bloom Strength
+                    0.35, // Radius
+                    0.85  // Threshold
+                );
+                this.composer.addPass(this.bloomPass);
+            }
+
+            /**
+             * Builds the Mine Cross-Section with Ground Rail Platform at y = 3.6
+             * so the 3D Miner Character (y = 3.6 to 6.2) is 100% visible inside the
+             * camera frustum in BOTH HOME and PLAYING states!
+             */
+            buildOpenTopMineEnvironment3D() {
+                const stoneBump = PBRTextureGenerator.createStoneBumpMap();
+                stoneBump.repeat.set(6, 4);
+
+                // 1. Bright Surface & Underground Lighting
+                const hemiLight = new THREE.HemisphereLight(0xfffbeb, 0x292018, 1.05);
+                this.scene.add(hemiLight);
+
+                // Dedicated Spotlight illuminating the 3D Miner Character at Top-Center (y = 3.6..6.2)
+                const minerKeyLight = new THREE.SpotLight(0xfff4d6, 6.5, 25, Math.PI / 2.6, 0.35, 1);
+                minerKeyLight.position.set(0, 9.2, 7.5);
+                minerKeyLight.target.position.set(0, 4.6, 0);
+                this.scene.add(minerKeyLight);
+                this.scene.add(minerKeyLight.target);
+
+                // Main Directional Sunlight
+                this.dirLight = new THREE.DirectionalLight(0xfff1d6, 1.75);
+                this.dirLight.position.set(8, 18, 16);
+                this.dirLight.castShadow = true;
+                this.dirLight.shadow.mapSize.width = 2048;
+                this.dirLight.shadow.mapSize.height = 2048;
+                const d = 18;
+                this.dirLight.shadow.camera.left = -d;
+                this.dirLight.shadow.camera.right = d;
+                this.dirLight.shadow.camera.top = d;
+                this.dirLight.shadow.camera.bottom = -d;
+                this.scene.add(this.dirLight);
+
+                // Wooden Mine Entrance Arch & Warm Lanterns flanking the Miner at y = 3.6
+                const timberMat = new THREE.MeshStandardMaterial({ color: 0x5c2d0c, roughness: 0.85 });
+                [-4.8, 4.8].forEach(xPillar => {
+                    const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.55, 3.6, 0.65), timberMat);
+                    pillar.position.set(xPillar, 5.2, -0.8);
+                    this.scene.add(pillar);
+                });
+                const topBeam = new THREE.Mesh(new THREE.BoxGeometry(10.8, 0.55, 0.8), timberMat);
+                topBeam.position.set(0, 6.85, -0.8);
+                this.scene.add(topBeam);
+
+                this.lanternLights = [];
+                [-4.2, 4.2].forEach(xPos => {
+                    const lanternLight = new THREE.PointLight(0xff9922, 3.0, 18, 1.4);
+                    lanternLight.position.set(xPos, 5.5, 1.2);
+                    this.scene.add(lanternLight);
+                    this.lanternLights.push(lanternLight);
+
+                    const bulb = new THREE.Mesh(
+                        new THREE.SphereGeometry(0.24, 12, 12),
+                        new THREE.MeshBasicMaterial({ color: 0xffdd66 })
+                    );
+                    bulb.position.set(xPos, 5.6, -0.2);
+                    this.scene.add(bulb);
+                });
+
+                this.explosionFlashLight = new THREE.PointLight(0xff6600, 0, 22);
+                this.scene.add(this.explosionFlashLight);
+
+                // 2. Open Sky/Cavern Backdrop behind the Miner (y > 3.6)
+                const skyBackdrop = new THREE.Mesh(
+                    new THREE.PlaneGeometry(50, 10),
+                    new THREE.MeshBasicMaterial({ color: 0x1a1528 })
+                );
+                skyBackdrop.position.set(0, 7.8, -4.0);
+                this.scene.add(skyBackdrop);
+
+                // 3. Underground Cavern Back Wall (Below y = 3.6)
+                const wallGeom = new THREE.PlaneGeometry(44, 18, 48, 24);
+                const pos = wallGeom.attributes.position;
+                for (let i = 0; i < pos.count; i++) {
+                    const x = pos.getX(i);
+                    const y = pos.getY(i);
+                    const zNoise = Math.sin(x * 0.45) * Math.cos(y * 0.45) * 0.85 + Math.sin(x * 1.2 + y * 0.9) * 0.35;
+                    pos.setZ(i, zNoise);
+                }
+                wallGeom.computeVertexNormals();
+
+                const backWall = new THREE.Mesh(
+                    wallGeom,
+                    new THREE.MeshStandardMaterial({
+                        color: 0x2d2218,
+                        roughness: 0.9,
+                        bumpMap: stoneBump,
+                        bumpScale: 0.28,
+                        flatShading: true
+                    })
+                );
+                backWall.position.set(0, -4.5, -2.8);
+                backWall.receiveShadow = true;
+                this.scene.add(backWall);
+
+                // 4. Split Ground Ledge & Railway Tracks at y = 3.6 (Leaving center shaft open for Hook!)
+                const ledgeMat = new THREE.MeshStandardMaterial({
+                    color: 0x4a3525,
+                    roughness: 0.85,
+                    bumpMap: stoneBump,
+                    bumpScale: 0.2
+                });
+                const railMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.88, roughness: 0.28 });
+
+                [-10.8, 10.8].forEach(xCenter => {
+                    const ground = new THREE.Mesh(new THREE.BoxGeometry(18, 0.95, 4.5), ledgeMat);
+                    ground.position.set(xCenter, 3.05, -0.4);
+                    ground.receiveShadow = true;
+                    this.scene.add(ground);
+                });
+
+                // Continuous Steel Railway Beams at y = 3.6 supporting the Miner's Winch Cart
+                [-1.05, 0.35].forEach(zTrack => {
+                    const rail = new THREE.Mesh(new THREE.BoxGeometry(36, 0.14, 0.14), railMat);
+                    rail.position.set(0, 3.55, zTrack);
+                    this.scene.add(rail);
+                });
+
+                // Decorative Gold Ore Cart parked on the left side of the track
+                const sideCart = new THREE.Mesh(
+                    new THREE.BoxGeometry(1.9, 0.95, 1.2),
+                    new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.7, roughness: 0.4 })
+                );
+                sideCart.position.set(-7.2, 4.1, -0.35);
+                this.scene.add(sideCart);
+
+                const sideGold = new THREE.Mesh(
+                    new THREE.DodecahedronGeometry(0.58, 1),
+                    new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 1.0, roughness: 0.2 })
+                );
+                sideGold.position.set(-7.2, 4.65, -0.35);
+                this.scene.add(sideGold);
+            }
+
+            spawnLevelItems(levelNum) {
+                this.worldItems.forEach(item => this.scene.remove(item));
+                this.worldItems = [];
+
+                const pool = [
+                    'GOLD_LARGE', 'GOLD_LARGE',
+                    'GOLD_MEDIUM', 'GOLD_MEDIUM', 'GOLD_MEDIUM', 'GOLD_MEDIUM',
+                    'GOLD_SMALL', 'GOLD_SMALL', 'GOLD_SMALL', 'GOLD_SMALL', 'GOLD_SMALL',
+                    'ROCK_LARGE', 'ROCK_LARGE',
+                    'ROCK_SMALL', 'ROCK_SMALL', 'ROCK_SMALL',
+                    'MYSTERY_BAG', 'MYSTERY_BAG',
+                    'TNT', 'TNT'
+                ];
+
+                const diamondCount = Math.min(5, 2 + Math.floor(levelNum / 2));
+                for (let i = 0; i < diamondCount; i++) pool.push('DIAMOND');
+                if (levelNum >= 2) pool.push('GOLD_LARGE', 'MYSTERY_BAG');
+
+                pool.forEach(specKey => {
+                    const itemMesh = this.itemFactory.createItemMesh(specKey);
+                    const r = itemMesh.userData.radius;
+
+                    // Spawn underground items strictly between y = 1.6 and y = -7.8, x in [-10.5, +10.5]
+                    let minY = -7.8, maxY = 1.6;
+                    if (specKey === 'GOLD_LARGE' || specKey === 'DIAMOND') {
+                        minY = -7.8; maxY = -3.2;
+                    } else if (specKey === 'GOLD_SMALL' || specKey === 'ROCK_SMALL') {
+                        minY = -4.2; maxY = 1.6;
+                    } else {
+                        minY = -6.8; maxY = 0.6;
+                    }
+
+                    for (let attempt = 0; attempt < 95; attempt++) {
+                        const x = (Math.random() - 0.5) * 21.0; // [-10.5, +10.5]
+                        const y = minY + Math.random() * (maxY - minY);
+
+                        // Leave clear zone right around the hook pivot (0, 3.3)
+                        if (Math.abs(x) < 2.4 && y > 0.2) continue;
+
+                        let overlaps = false;
+                        for (const other of this.worldItems) {
+                            const minDist = r + other.userData.radius + 0.45;
+                            if (Math.hypot(x - other.position.x, y - other.position.y) < minDist) {
+                                overlaps = true;
+                                break;
+                            }
+                        }
+
+                        if (!overlaps) {
+                            itemMesh.position.set(x, y, 0);
+                            itemMesh.rotation.set(
+                                (Math.random() - 0.5) * 0.4,
+                                (Math.random() - 0.5) * 0.8,
+                                (Math.random() - 0.5) * 0.5
+                            );
+                            this.scene.add(itemMesh);
+                            this.worldItems.push(itemMesh);
+                            break;
+                        }
+                    }
+                });
+            }
+
+            triggerTNTExplosion(tntItem) {
+                if (!tntItem || tntItem.userData.isDetonated) return;
+                tntItem.userData.isDetonated = true;
+
+                const pos = tntItem.position.clone();
+                const radius = tntItem.userData.explosionRadius || 5.4;
+
+                const idx = this.worldItems.indexOf(tntItem);
+                if (idx !== -1) this.worldItems.splice(idx, 1);
+                this.scene.remove(tntItem);
+
+                this.vfxPool.spawnVFX('TNTExplosion', pos);
+                this.vfxPool.spawnVFX('RockDebris', pos);
+                this.explosionFlashLight.position.copy(pos);
+                this.explosionFlashLight.position.z += 2;
+                this.explosionFlashLight.intensity = 12.0;
+
+                this.cameraDirector.triggerShake(1.6, 0.45);
+                this.sound.playExplosion();
+                this.spawnFloatingPopup(pos, '💥 BÙM! NỔ TNT!', '#ef4444');
+                this.setMinerSpeech('💥 Ông Thợ Mỏ: "Cẩn thận củi lửa! Thùng TNT nổ dây chuyền kìa!"');
+
+                const victims = [];
+                for (let i = 0; i < this.worldItems.length; i++) {
+                    const other = this.worldItems[i];
+                    if (pos.distanceTo(other.position) <= radius + other.userData.radius * 0.5) {
+                        victims.push(other);
+                    }
+                }
+
+                victims.forEach(victim => {
+                    if (victim.userData.isExplosive) {
+                        setTimeout(() => this.triggerTNTExplosion(victim), 130);
+                    } else {
+                        this.vfxPool.spawnVFX('RockDebris', victim.position);
+                        const vIdx = this.worldItems.indexOf(victim);
+                        if (vIdx !== -1) this.worldItems.splice(vIdx, 1);
+                        this.scene.remove(victim);
+                    }
+                });
+            }
+
+            handleItemScored(item) {
+                let reward = item.userData.baseValue;
+                let popupText = `+$${reward}`;
+                let popupColor = '#fde047';
+
+                if (item.userData.type === 'MYSTERY_BAG') {
+                    const roll = Math.random();
+                    if (this.buffs.clover) {
+                        reward = Math.floor(500 + Math.random() * 450);
+                        popupText = `🍀 TÚI MAY MẮN +$${reward}`;
+                        popupColor = '#34d399';
+                    } else if (roll > 0.76) {
+                        this.dynamiteCount++;
+                        reward = 180;
+                        popupText = `🧨 +1 TNT & +$180`;
+                        popupColor = '#fb923c';
+                    } else {
+                        reward = Math.floor(80 + Math.random() * 620);
+                        popupText = `💰 TÚI BÍ ẨN +$${reward}`;
+                    }
+                } else if (item.userData.type === 'DIAMOND') {
+                    if (this.buffs.polish) reward = Math.round(reward * 1.5);
+                    popupColor = '#38bdf8';
+                    popupText = `💎 KIM CƯƠNG +$${reward}`;
+                }
+
+                this.walletGold += reward;
+                this.sound.playCoin(reward);
+                this.spawnFloatingPopup(new THREE.Vector3(0, 4.2, 0), popupText, popupColor);
+                this.setMinerSpeech(`👷 Ông Thợ Mỏ: "Tuyệt vời! Thu về +$${reward}!"`);
+                this.syncAllUI();
+
+                if (this.worldItems.length === 0) {
+                    this.finishLevel();
+                }
+            }
+
+            setMinerSpeech(text) {
+                const bubble = document.getElementById('miner-speech-bubble');
+                if (bubble) bubble.textContent = text;
+            }
+
+            spawnFloatingPopup(worldPos, text, color = '#fde047') {
+                const container = document.getElementById('popups-container');
+                const v = worldPos.clone().project(this.camera);
+                const x = (v.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (-(v.y * 0.5) + 0.5) * window.innerHeight;
+
+                const el = document.createElement('div');
+                el.className = 'floating-popup font-display font-extrabold text-lg sm:text-2xl px-3 py-1 rounded-xl';
+                el.style.left = `${x}px`;
+                el.style.top = `${y}px`;
+                el.style.color = color;
+                el.textContent = text;
+
+                container.appendChild(el);
+                setTimeout(() => el.remove(), 1450);
+            }
+
+            /**
+             * SCREEN NAVIGATION: HOME | SHOP | PLAYING | RESULT
+             */
+            goToHomeScreen() {
+                this.state = 'HOME';
+                this.hookController.resetHook();
+                this.cameraDirector.setMode('HOME');
+
+                document.getElementById('screen-home').classList.remove('hidden');
+                document.getElementById('screen-shop').classList.add('hidden');
+                document.getElementById('screen-shop').classList.remove('flex');
+                document.getElementById('gameplay-hud').classList.add('hidden');
+                document.getElementById('modal-result').classList.add('hidden');
+                document.getElementById('modal-result').classList.remove('flex');
+
+                this.syncAllUI();
+            }
+
+            openShopScreen(subtitleText = 'Trạm Tiếp Tế Thợ Mỏ — Trang Bị Trước Khi Đào') {
+                this.state = 'SHOP';
+                this.hookController.resetHook();
+                this.cameraDirector.setMode('HOME');
+
+                document.getElementById('shop-subtitle').textContent = subtitleText;
+                document.getElementById('screen-home').classList.add('hidden');
+                document.getElementById('gameplay-hud').classList.add('hidden');
+                document.getElementById('modal-result').classList.add('hidden');
+                document.getElementById('modal-result').classList.remove('flex');
+
+                const shopEl = document.getElementById('screen-shop');
+                shopEl.classList.remove('hidden');
+                shopEl.classList.add('flex');
+
+                this.syncAllUI();
+            }
+
+            startPureGameplay() {
+                this.sound.init();
+                this.state = 'PLAYING';
+                this.remainingTime = 60;
+                // Target scales reasonably based on level
+                if (this.level === 1 && this.targetScore < 900) {
+                    this.targetScore = 1050;
+                }
+
+                this.hookController.resetHook();
+                this.cameraDirector.setMode('PLAYING');
+
+                // Hide ALL Menus & Show ONLY the Pure Gameplay HUD
+                document.getElementById('screen-home').classList.add('hidden');
+                document.getElementById('screen-shop').classList.add('hidden');
+                document.getElementById('screen-shop').classList.remove('flex');
+                document.getElementById('modal-result').classList.add('hidden');
+                document.getElementById('modal-result').classList.remove('flex');
+                document.getElementById('gameplay-hud').classList.remove('hidden');
+
+                this.setMinerSpeech('👷 Ông Thợ Mỏ: "Nhấn Chuột Trái hoặc Phím Space để phóng móc!"');
+                this.syncAllUI();
+            }
+
+            finishLevel() {
+                this.hookController.resetHook();
+                const passed = this.walletGold >= this.targetScore;
+
+                // Clear single-level buffs after the round ends
+                this.buffs = { strength: false, clover: false, polish: false, magnet: false };
+
+                this.state = 'RESULT';
+                document.getElementById('gameplay-hud').classList.add('hidden');
+
+                const modal = document.getElementById('modal-result');
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+
+                document.getElementById('result-score').textContent = `$${this.walletGold.toLocaleString()}`;
+                document.getElementById('result-target').textContent = `$${this.targetScore.toLocaleString()}`;
+
+                const btnShop = document.getElementById('btn-result-shop');
+                const btnAction = document.getElementById('btn-result-Action');
+
+                if (passed) {
+                    document.getElementById('result-icon').textContent = '🏆';
+                    document.getElementById('result-title').textContent = `THẮNG MÀN ${this.level}!`;
+                    document.getElementById('result-title').className = 'font-display text-2xl sm:text-3xl font-extrabold text-amber-300';
+                    document.getElementById('result-desc').textContent = 'Ông Già Đào Vàng đã vượt chỉ tiêu! Hãy ghé Cửa Hàng mua trang bị cho màn mới.';
+                    btnShop.classList.remove('hidden');
+                    btnAction.textContent = `▶ CHƠI NGAY MÀN ${this.level + 1}`;
+
+                    // Advance level & prepare next map
+                    this.level++;
+                    this.targetScore = Math.floor(this.walletGold + 650 + this.level * 220);
+                    this.spawnLevelItems(this.level);
+                } else {
+                    document.getElementById('result-icon').textContent = '⚠️';
+                    document.getElementById('result-title').textContent = 'CHƯA ĐỦ CHỈ TIÊU!';
+                    document.getElementById('result-title').className = 'font-display text-2xl sm:text-3xl font-extrabold text-red-400';
+                    document.getElementById('result-desc').textContent = 'Đừng nản chí! Khởi động lại từ Màn 1 với $500 vốn khởi điểm.';
+                    btnShop.classList.add('hidden');
+                    btnAction.textContent = '🔄 CHƠI LẠI TỪ MÀN 1';
+
+                    this.level = 1;
+                    this.walletGold = 500;
+                    this.targetScore = 1050;
+                    this.dynamiteCount = 2;
+                    this.spawnLevelItems(1);
+                }
+
+                this.syncAllUI();
+            }
+
+            tryUseDynamiteAction() {
+                if (this.state !== 'PLAYING' || this.dynamiteCount <= 0) return;
+                if (this.hookController.throwDynamiteOnAttachedItem()) {
+                    this.dynamiteCount--;
+                    this.syncAllUI();
+                }
+            }
+
+            syncAllUI() {
+                // Home Screen
+                document.getElementById('home-wallet-gold').textContent = `$${this.walletGold.toLocaleString()}`;
+                document.getElementById('home-level-num').textContent = this.level;
+                const homeDynEl = document.getElementById('home-inv-dynamite');
+                if (homeDynEl) homeDynEl.textContent = this.dynamiteCount;
+                const homeStrEl = document.getElementById('home-inv-strength');
+                if (homeStrEl) {
+                    homeStrEl.textContent = this.buffs.strength ? 'Đã bật ✔' : 'Chưa mua';
+                    homeStrEl.className = this.buffs.strength ? 'text-sky-400' : 'text-stone-500';
+                }
+                const homeClvEl = document.getElementById('home-inv-clover');
+                if (homeClvEl) {
+                    homeClvEl.textContent = this.buffs.clover ? 'Đã bật ✔' : 'Chưa mua';
+                    homeClvEl.className = this.buffs.clover ? 'text-emerald-400' : 'text-stone-500';
+                }
+
+                // Shop Screen
+                document.getElementById('shop-wallet-gold').textContent = `$${this.walletGold.toLocaleString()}`;
+                document.getElementById('shop-next-level').textContent = this.level;
+                document.getElementById('shop-owned-dynamite').textContent = `Đang có: ${this.dynamiteCount}`;
+
+                const setShopBtn = (id, price, isOwned, label) => {
+                    const btn = document.getElementById(id);
+                    if (!btn) return;
+                    if (isOwned) {
+                        btn.disabled = true;
+                        btn.textContent = 'Đã Trang Bị ✔';
+                    } else {
+                        btn.disabled = this.walletGold < price;
+                        btn.textContent = `${label} ($${price})`;
+                    }
+                };
+
+                const btnDyn = document.getElementById('btn-buy-dynamite');
+                btnDyn.disabled = this.walletGold < 150;
+                btnDyn.textContent = `Mua Thêm ($150)`;
+
+                setShopBtn('btn-buy-strength', 250, this.buffs.strength, 'Mua');
+                setShopBtn('btn-buy-clover', 200, this.buffs.clover, 'Mua');
+                setShopBtn('btn-buy-polish', 300, this.buffs.polish, 'Mua');
+                setShopBtn('btn-buy-magnet', 220, this.buffs.magnet, 'Mua');
+
+                // Gameplay HUD
+                document.getElementById('hud-level').textContent = String(this.level).padStart(2, '0');
+                document.getElementById('hud-score').textContent = `$${this.walletGold.toLocaleString()}`;
+                document.getElementById('hud-target').textContent = `$${this.targetScore.toLocaleString()}`;
+
+                const pct = Math.min(100, Math.floor((this.walletGold / Math.max(1, this.targetScore)) * 100));
+                document.getElementById('hud-progress-bar').style.width = `${pct}%`;
+
+                const secs = Math.ceil(this.remainingTime);
+                const timerEl = document.getElementById('hud-timer');
+                timerEl.textContent = `${secs}s`;
+                timerEl.classList.toggle('timer-urgent', secs <= 10 && this.state === 'PLAYING');
+
+                document.getElementById('hud-dynamite-count').textContent = this.dynamiteCount;
+                const canUseDyn =
+                    this.state === 'PLAYING' &&
+                    this.dynamiteCount > 0 &&
+                    this.hookController.state === 'RETURNING' &&
+                    this.hookController.attachedItem !== null;
+                document.getElementById('btn-use-dynamite').disabled = !canUseDyn;
+
+                // Show Early Level Finish button as soon as target score is met
+                const canFinishEarly = this.state === 'PLAYING' && this.walletGold >= this.targetScore;
+                document.getElementById('btn-finish-early').classList.toggle('hidden', !canFinishEarly);
+
+                // Buff Badges
+                document.getElementById('badge-strength').classList.toggle('hidden', !this.buffs.strength);
+                document.getElementById('badge-clover').classList.toggle('hidden', !this.buffs.clover);
+                document.getElementById('badge-polish').classList.toggle('hidden', !this.buffs.polish);
+                document.getElementById('badge-magnet').classList.toggle('hidden', !this.buffs.magnet);
+            }
+
+            bindEvents() {
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                    this.composer.setSize(window.innerWidth, window.innerHeight);
+                });
+
+                // Pure Gameplay Canvas Click / Touch
+                this.container.addEventListener('pointerdown', (e) => {
+                    if (this.state !== 'PLAYING') return;
+                    if (e.button === 2) {
+                        this.tryUseDynamiteAction();
+                    } else {
+                        this.hookController.launch();
+                    }
+                });
+
+                window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+                window.addEventListener('keydown', (e) => {
+                    if (this.state !== 'PLAYING') return;
+                    if (e.code === 'Space' || e.code === 'ArrowDown' || e.code === 'KeyS') {
+                        e.preventDefault();
+                        this.hookController.launch();
+                    } else if (e.code === 'KeyE' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+                        e.preventDefault();
+                        this.tryUseDynamiteAction();
+                    }
+                });
+
+                // Home Screen Buttons
+                document.getElementById('btn-home-play').addEventListener('click', () => {
+                    this.startPureGameplay();
+                });
+
+                document.getElementById('btn-home-shop').addEventListener('click', () => {
+                    this.sound.init();
+                    this.openShopScreen('Cửa Hàng Vật Phẩm — Mua Sắm Trang Bị');
+                });
+
+                document.getElementById('btn-open-guide').addEventListener('click', () => {
+                    const m = document.getElementById('modal-guide');
+                    m.classList.remove('hidden');
+                    m.classList.add('flex');
+                });
+
+                const closeGuide = () => {
+                    const m = document.getElementById('modal-guide');
+                    m.classList.add('hidden');
+                    m.classList.remove('flex');
+                };
+                document.getElementById('btn-close-guide').addEventListener('click', closeGuide);
+                document.getElementById('btn-close-guide-bottom').addEventListener('click', closeGuide);
+
+                // Shop Screen Purchase Buttons
+                document.getElementById('btn-buy-dynamite').addEventListener('click', () => {
+                    if (this.walletGold >= 150) {
+                        this.walletGold -= 150;
+                        this.dynamiteCount++;
+                        this.sound.playCoin(150);
+                        this.syncAllUI();
+                    }
+                });
+
+                const bindBuffPurchase = (btnId, buffKey, price) => {
+                    document.getElementById(btnId).addEventListener('click', () => {
+                        if (!this.buffs[buffKey] && this.walletGold >= price) {
+                            this.walletGold -= price;
+                            this.buffs[buffKey] = true;
+                            this.sound.playCoin(price);
+                            this.syncAllUI();
+                        }
+                    });
+                };
+                bindBuffPurchase('btn-buy-strength', 'strength', 250);
+                bindBuffPurchase('btn-buy-clover', 'clover', 200);
+                bindBuffPurchase('btn-buy-polish', 'polish', 300);
+                bindBuffPurchase('btn-buy-magnet', 'magnet', 220);
+
+                document.getElementById('btn-shop-to-home').addEventListener('click', () => {
+                    this.goToHomeScreen();
+                });
+
+                document.getElementById('btn-shop-play').addEventListener('click', () => {
+                    this.startPureGameplay();
+                });
+
+                // Gameplay HUD Buttons
+                document.getElementById('btn-use-dynamite').addEventListener('click', () => {
+                    this.tryUseDynamiteAction();
+                });
+
+                document.getElementById('btn-finish-early').addEventListener('click', () => {
+                    if (this.state === 'PLAYING') this.finishLevel();
+                });
+
+                document.getElementById('btn-back-home').addEventListener('click', () => {
+                    this.goToHomeScreen();
+                });
+
+                // Result Modal Buttons
+                document.getElementById('btn-result-shop').addEventListener('click', () => {
+                    this.openShopScreen(`Chuẩn Bị Trang Bị Cho Màn ${this.level}`);
+                });
+
+                document.getElementById('btn-result-Action').addEventListener('click', () => {
+                    this.startPureGameplay();
+                });
+
+                document.getElementById('btn-result-home').addEventListener('click', () => {
+                    this.goToHomeScreen();
+                });
+
+                // Audio Toggle
+                document.getElementById('btn-audio-toggle').addEventListener('click', () => {
+                    const isMuted = this.sound.toggleMute();
+                    document.getElementById('icon-sound-on').classList.toggle('hidden', isMuted);
+                    document.getElementById('icon-sound-off').classList.toggle('hidden', !isMuted);
+                });
+            }
+
+            animate() {
+                requestAnimationFrame(this.animate);
+
+                const dt = Math.min(this.clock.getDelta(), 0.1);
+                const elapsed = this.clock.getElapsedTime();
+
+                if (this.state === 'PLAYING') {
+                    this.remainingTime -= dt;
+                    if (this.remainingTime <= 0) {
+                        this.remainingTime = 0;
+                        this.finishLevel();
+                    }
+
+                    this.hookController.update(
+                        dt,
+                        elapsed,
+                        this.worldItems,
+                        this.buffs,
+                        (tntItem) => this.triggerTNTExplosion(tntItem),
+                        (msg) => this.setMinerSpeech(msg)
+                    );
+                    this.syncAllUI();
+                } else {
+                    // On Home / Shop screens, keep the 3D Miner & Hook gently animated in the background!
+                    this.hookController.swingTime += dt * 1.1;
+                    this.hookController.currentAngle = Math.sin(this.hookController.swingTime) * 0.45;
+                    this.hookController.pivotGroup.rotation.z = this.hookController.currentAngle;
+                    this.minerCharacter.update(dt, elapsed, 'SWINGING', this.hookController.currentAngle, null, 10);
+                }
+
+                // Animate Diamonds & TNT Fuse Sparks
+                for (let i = 0; i < this.worldItems.length; i++) {
+                    const item = this.worldItems[i];
+                    if (item.userData.type === 'DIAMOND') {
+                        item.rotation.y += dt * 1.6;
+                    } else if (item.userData.type === 'TNT') {
+                        const spark = item.getObjectByName('tntFuseSpark');
+                        if (spark) {
+                            spark.scale.setScalar(0.85 + Math.sin(elapsed * 28 + i) * 0.35);
+                        }
+                    }
+                }
+
+                if (this.explosionFlashLight.intensity > 0) {
+                    this.explosionFlashLight.intensity = Math.max(0, this.explosionFlashLight.intensity - dt * 28);
+                }
+                this.lanternLights.forEach((light, idx) => {
+                    light.intensity = 2.4 + Math.sin(elapsed * 8 + idx * 3) * 0.2;
+                });
+
+                this.vfxPool.update(dt);
+                this.cameraDirector.update(dt);
+                this.composer.render();
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            window.goldMinerGame = new GoldMiner3DGame();
+        });
+    </script>
+</body>
+</html>
