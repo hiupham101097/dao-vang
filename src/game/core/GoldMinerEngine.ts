@@ -104,30 +104,34 @@ export class GoldMinerEngine {
   private initThreePBRScene(): void {
     const width = this.container.clientWidth || window.innerWidth;
     const height = this.container.clientHeight || window.innerHeight;
+    const pr = Math.min(window.devicePixelRatio || 1, 2);
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0b0806);
-    this.scene.fog = new THREE.FogExp2(0x0b0806, 0.011);
+    this.scene.background = new THREE.Color(0x140e0a);
+    this.scene.fog = new THREE.FogExp2(0x140e0a, 0.004);
 
-    this.camera = new THREE.PerspectiveCamera(42, width / height, 0.5, 120);
+    this.camera = new THREE.PerspectiveCamera(46, width / height, 0.5, 120);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(pr);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.25;
+    this.renderer.toneMappingExposure = 1.35;
     this.container.appendChild(this.renderer.domElement);
 
     // PMREM Environment Map for realistic Gold & Metallic reflections
     const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
 
-    // UnrealBloomPass Post-Processing
+    // High-Resolution UnrealBloomPass Post-Processing
     this.composer = new EffectComposer(this.renderer);
+    this.composer.setPixelRatio(pr);
+    this.composer.setSize(width, height);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.42, 0.35, 0.85);
+
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(width * pr, height * pr), 0.32, 0.25, 0.88);
     this.composer.addPass(this.bloomPass);
   }
 
@@ -135,20 +139,20 @@ export class GoldMinerEngine {
     const stoneBump = PBRTextureGenerator.createStoneBumpMap();
     stoneBump.repeat.set(6, 4);
 
-    // 1. Lighting Setup
-    const hemiLight = new THREE.HemisphereLight(0xfffbeb, 0x292018, 1.05);
+    // 1. Cavern Lighting Setup (Crisp, High-Contrast Visibility)
+    const hemiLight = new THREE.HemisphereLight(0xfffbeb, 0x3d2719, 1.4);
     this.scene.add(hemiLight);
 
-    // Dedicated Spotlight on the 3D Miner Character
-    const minerKeyLight = new THREE.SpotLight(0xfff4d6, 6.5, 25, Math.PI / 2.6, 0.35, 1);
-    minerKeyLight.position.set(0, 9.2, 7.5);
-    minerKeyLight.target.position.set(0, 4.6, 0);
+    // Dedicated Bright Key Light on the 3D Miner Character & Crane
+    const minerKeyLight = new THREE.SpotLight(0xfff6dd, 8.5, 26, Math.PI / 2.5, 0.32, 1);
+    minerKeyLight.position.set(0, 8.8, 7.2);
+    minerKeyLight.target.position.set(0, 4.2, 0);
     this.scene.add(minerKeyLight);
     this.scene.add(minerKeyLight.target);
 
-    // Main Directional Sunlight
-    const dirLight = new THREE.DirectionalLight(0xfff1d6, 1.75);
-    dirLight.position.set(8, 18, 16);
+    // Main Sunlight
+    const dirLight = new THREE.DirectionalLight(0xfffaea, 2.0);
+    dirLight.position.set(6, 16, 14);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 1024;
     dirLight.shadow.mapSize.height = 1024;
@@ -159,68 +163,96 @@ export class GoldMinerEngine {
     dirLight.shadow.camera.bottom = -d;
     this.scene.add(dirLight);
 
+    // Underground Cavern Floodlights: Illuminates minerals clearly from both flanks
+    const cavernLeftLight = new THREE.PointLight(0xfffae6, 3.8, 22);
+    cavernLeftLight.position.set(-6.0, -4.5, 4.8);
+    this.scene.add(cavernLeftLight);
+
+    const cavernRightLight = new THREE.PointLight(0xfffae6, 3.8, 22);
+    cavernRightLight.position.set(6.0, -4.5, 4.8);
+    this.scene.add(cavernRightLight);
+
+    const cavernFrontLight = new THREE.DirectionalLight(0xfff3db, 1.3);
+    cavernFrontLight.position.set(0, 2, 10);
+    this.scene.add(cavernFrontLight);
+
     // Explosion Flash Light
     this.explosionFlashLight = new THREE.PointLight(0xff4500, 0, 35);
     this.explosionFlashLight.position.set(0, -3, 3);
     this.scene.add(this.explosionFlashLight);
 
-    // 2. Timber Mine Arch & Lanterns
-    const timberMat = new THREE.MeshStandardMaterial({ color: 0x5c2d0c, roughness: 0.85 });
-    [-4.8, 4.8].forEach((xPillar) => {
-      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.55, 3.6, 0.65), timberMat);
-      pillar.position.set(xPillar, 4.6, 0);
+    // 2. Heavy Timber Mine Arch & Lanterns
+    const timberMat = new THREE.MeshStandardMaterial({ color: 0x4a240c, roughness: 0.85 });
+    [-5.2, 5.2].forEach((xPillar) => {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.65, 4.2, 0.75), timberMat);
+      pillar.position.set(xPillar, 4.8, 0);
       pillar.castShadow = true;
       this.scene.add(pillar);
 
-      // Hanging Lantern
+      // Hanging Brass Cavern Lantern
       const lanternMesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.14, 0.18, 0.36, 8),
-        new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.8, roughness: 0.2 })
+        new THREE.CylinderGeometry(0.16, 0.22, 0.42, 12),
+        new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.85, roughness: 0.2 })
       );
-      lanternMesh.position.set(xPillar * 0.82, 5.5, 0.5);
+      lanternMesh.position.set(xPillar * 0.85, 5.6, 0.6);
       this.scene.add(lanternMesh);
 
-      const pLight = new THREE.PointLight(0xff9900, 2.5, 9.5);
+      const pLight = new THREE.PointLight(0xffa500, 3.2, 12.0);
       pLight.position.copy(lanternMesh.position);
       this.scene.add(pLight);
       this.lanternLights.push(pLight);
     });
 
-    const crossBeam = new THREE.Mesh(new THREE.BoxGeometry(10.2, 0.55, 0.7), timberMat);
-    crossBeam.position.set(0, 6.4, 0);
+    const crossBeam = new THREE.Mesh(new THREE.BoxGeometry(11.2, 0.65, 0.8), timberMat);
+    crossBeam.position.set(0, 6.7, 0);
     this.scene.add(crossBeam);
 
     // Ground Platform at y = 3.6
-    const groundGeom = new THREE.BoxGeometry(22, 1.2, 10);
+    const groundGeom = new THREE.BoxGeometry(24, 1.4, 10);
     const groundMat = new THREE.MeshStandardMaterial({
-      color: 0x261a12,
-      roughness: 0.9,
+      color: 0x2b1d14,
+      roughness: 0.88,
       bumpMap: stoneBump,
-      bumpScale: 0.12,
+      bumpScale: 0.16,
     });
     const ground = new THREE.Mesh(groundGeom, groundMat);
-    ground.position.set(0, 3.0, 0);
+    ground.position.set(0, 2.9, 0);
     ground.receiveShadow = true;
     this.scene.add(ground);
 
-    // Underground Mine Chamber Back Wall
-    const backWallGeom = new THREE.PlaneGeometry(24, 16);
-    const backWallMat = new THREE.MeshStandardMaterial({
-      color: 0x17120e,
-      roughness: 0.95,
+    // Cavern Side Rock Walls: Defines the boundaries clearly
+    const sideWallMat = new THREE.MeshStandardMaterial({
+      color: 0x241810,
+      roughness: 0.92,
       bumpMap: stoneBump,
       bumpScale: 0.35,
+    });
+
+    [-6.8, 6.8].forEach((xWall) => {
+      const sideWall = new THREE.Mesh(new THREE.BoxGeometry(2.0, 18, 8), sideWallMat);
+      sideWall.position.set(xWall, -4.0, 0);
+      sideWall.receiveShadow = true;
+      this.scene.add(sideWall);
+    });
+
+    // Subterranean Cavern Back Wall
+    const backWallGeom = new THREE.PlaneGeometry(28, 20);
+    const backWallMat = new THREE.MeshStandardMaterial({
+      color: 0x1a120c,
+      roughness: 0.94,
+      bumpMap: stoneBump,
+      bumpScale: 0.32,
     });
     const backWall = new THREE.Mesh(backWallGeom, backWallMat);
     backWall.position.set(0, -4.5, -2.5);
     backWall.receiveShadow = true;
     this.scene.add(backWall);
 
-    // Mine Shaft Rails
-    [-0.7, 0.7].forEach((zOff) => {
+    // Mine Shaft Steel Rails
+    [-0.75, 0.75].forEach((zOff) => {
       const rail = new THREE.Mesh(
-        new THREE.BoxGeometry(20, 0.1, 0.08),
-        new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.85, roughness: 0.3 })
+        new THREE.BoxGeometry(24, 0.12, 0.1),
+        new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.92, roughness: 0.22 })
       );
       rail.position.set(0, 3.65, zOff);
       this.scene.add(rail);
@@ -354,6 +386,7 @@ export class GoldMinerEngine {
     }
 
     this.sound.playCoin(reward);
+    this.minerCharacter.triggerCheer();
     this.setMinerSpeech(`👨‍🏭 Ông Thợ Mỏ: "Tuyệt vời! Thu về +$${reward}!"`);
 
     // Emit 2D screen coordinate floating popup
@@ -486,10 +519,17 @@ export class GoldMinerEngine {
 
   public resize(width: number, height: number): void {
     if (!this.renderer || !this.camera || !this.composer) return;
+    const pr = Math.min(window.devicePixelRatio || 1, 2);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
+    this.renderer.setPixelRatio(pr);
+    this.composer.setPixelRatio(pr);
     this.composer.setSize(width, height);
+    if (this.bloomPass) {
+      this.bloomPass.resolution.set(width * pr, height * pr);
+    }
+    this.cameraDirector.updateTargetFraming();
   }
 
   public emitState(): void {

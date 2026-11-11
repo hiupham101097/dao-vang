@@ -57,82 +57,129 @@ export class HookController {
   }
 
   private buildWinchCartAndHook(): void {
-    const steelMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.92, roughness: 0.2 });
-    const darkIronMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.85, roughness: 0.35 });
-    const hazardMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.4, roughness: 0.3 });
-    const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.75 });
+    const steelMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.95, roughness: 0.15 });
+    const darkIronMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.88, roughness: 0.28 });
+    const goldBrassMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.9, roughness: 0.18 });
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x613612, roughness: 0.7 });
+    const clawTipMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      metalness: 0.95,
+      roughness: 0.1,
+      emissive: 0x0284c7,
+      emissiveIntensity: 0.7,
+    });
 
-    // Wooden Cart & Railway Platform (y = 3.6)
+    // 1. Heavy Industrial Timber Minecart Platform (y = 3.6)
     this.cartGroup = new THREE.Group();
     this.cartGroup.position.set(0, 3.6, 0);
     this.scene.add(this.cartGroup);
 
-    const cartDeck = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.34, 2.2), woodMat);
-    cartDeck.position.set(0, 0.18, -0.35);
+    // Sturdy wooden chassis
+    const cartDeck = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.42, 2.5), woodMat);
+    cartDeck.position.set(0, 0.21, -0.35);
     cartDeck.castShadow = true;
     this.cartGroup.add(cartDeck);
 
-    // 4 Iron Cart Wheels
-    [-1.35, 1.35].forEach((xOff) => {
-      [-1.05, 0.35].forEach((zOff) => {
-        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.16, 16), darkIronMat);
-        wheel.rotation.z = Math.PI / 2;
-        wheel.position.set(xOff, 0.02, zOff);
-        this.cartGroup.add(wheel);
+    // Brass & Steel Trim plates with bolts
+    const frontTrim = new THREE.Mesh(new THREE.BoxGeometry(4.42, 0.16, 0.08), goldBrassMat);
+    frontTrim.position.set(0, 0.21, 0.9);
+    this.cartGroup.add(frontTrim);
+
+    // 4 Heavy Cast Iron Spoked Wheels
+    [-1.6, 1.6].forEach((xOff) => {
+      [-1.1, 0.4].forEach((zOff) => {
+        const wheelGroup = new THREE.Group();
+        wheelGroup.position.set(xOff, 0.02, zOff);
+
+        const tire = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.18, 24), darkIronMat);
+        tire.rotation.z = Math.PI / 2;
+        wheelGroup.add(tire);
+
+        const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.22, 16), goldBrassMat);
+        hub.rotation.z = Math.PI / 2;
+        wheelGroup.add(hub);
+
+        this.cartGroup.add(wheelGroup);
       });
     });
 
-    // A-Frame Steel Boom
-    [-0.55, 0.55].forEach((xOff) => {
-      const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.08, 1.35, 10), darkIronMat);
-      strut.position.set(xOff * 0.6, 0.22, -0.15);
+    // A-Frame Steel Crane Boom with reinforced struts
+    [-0.65, 0.65].forEach((xOff) => {
+      const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 1.45, 12), darkIronMat);
+      strut.position.set(xOff * 0.65, 0.26, -0.12);
       strut.rotation.x = 0.65;
       strut.rotation.z = xOff < 0 ? -0.25 : 0.25;
       this.cartGroup.add(strut);
     });
 
-    // Front Winch Drum
-    const drumGeom = new THREE.CylinderGeometry(0.48, 0.48, 1.45, 20);
+    // Massive Industrial Cable Winch Drum
+    const drumGeom = new THREE.CylinderGeometry(0.55, 0.55, 1.65, 24);
     drumGeom.rotateZ(Math.PI / 2);
     this.winchDrum = new THREE.Mesh(drumGeom, darkIronMat);
-    this.winchDrum.position.set(0, 0.68, 0.05);
+    this.winchDrum.position.set(0, 0.72, 0.08);
     this.cartGroup.add(this.winchDrum);
 
-    // Spoked Winch Wheel
+    // Cable coils wrapped around the drum
+    for (let c = -0.65; c <= 0.65; c += 0.22) {
+      const coil = new THREE.Mesh(new THREE.TorusGeometry(0.56, 0.065, 8, 24), steelMat);
+      coil.rotation.y = Math.PI / 2;
+      coil.position.set(c, 0.72, 0.08);
+      this.cartGroup.add(coil);
+    }
+
+    // Interlocking Giant Brass Gear Wheel & Crank Handle
     this.winchGear = new THREE.Group();
-    this.winchGear.position.set(0.88, 0.68, 0.05);
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.07, 10, 24), hazardMat);
-    rim.rotation.y = Math.PI / 2;
-    this.winchGear.add(rim);
-    for (let s = 0; s < 4; s++) {
-      const spoke = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.2, 8), steelMat);
-      spoke.rotation.x = (s * Math.PI) / 4;
+    this.winchGear.position.set(0.98, 0.72, 0.08);
+
+    const gearRim = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.08, 12, 32), goldBrassMat);
+    gearRim.rotation.y = Math.PI / 2;
+    this.winchGear.add(gearRim);
+
+    // 16 Gear Cog Teeth around the circumference
+    for (let g = 0; g < 16; g++) {
+      const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.12), goldBrassMat);
+      const angle = (g * Math.PI * 2) / 16;
+      tooth.position.set(0, Math.sin(angle) * 0.76, Math.cos(angle) * 0.76);
+      tooth.rotation.x = -angle;
+      this.winchGear.add(tooth);
+    }
+
+    for (let s = 0; s < 6; s++) {
+      const spoke = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.4, 8), steelMat);
+      spoke.rotation.x = (s * Math.PI) / 6;
       this.winchGear.add(spoke);
     }
+
+    // Crank handle peg
+    const crankPin = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.36, 12), steelMat);
+    crankPin.rotation.z = Math.PI / 2;
+    crankPin.position.set(0.18, 0.5, 0);
+    this.winchGear.add(crankPin);
+
     this.cartGroup.add(this.winchGear);
 
-    // Rotating Hook Pivot at (0, 3.3, 0)
+    // 2. Rotating Hook Pivot at Pulley Wheel (0, 3.3, 0)
     this.pivotGroup = new THREE.Group();
     this.pivotGroup.position.copy(this.pivotPos);
     this.scene.add(this.pivotGroup);
 
     // Pulley Sheave Wheel
-    const pulleyWheel = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.16, 16), hazardMat);
+    const pulleyWheel = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.22, 24), goldBrassMat);
     pulleyWheel.rotation.x = Math.PI / 2;
     this.pivotGroup.add(pulleyWheel);
 
-    // Steel Cable
-    const cableGeom = new THREE.CylinderGeometry(0.055, 0.055, 1, 8);
+    // Gleaming High-Visibility Steel Cable
+    const cableGeom = new THREE.CylinderGeometry(0.065, 0.065, 1, 10);
     cableGeom.translate(0, -0.5, 0);
     this.cableMesh = new THREE.Mesh(cableGeom, steelMat);
     this.pivotGroup.add(this.cableMesh);
 
-    // 3D Hook Head & 3 Articulated Claws
+    // 3. 3D Titanium Mechanical Hook Head & 3 Articulated Claws
     this.hookHead = new THREE.Group();
     this.hookHead.position.set(0, -this.restLength, 0);
     this.pivotGroup.add(this.hookHead);
 
-    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.32, 0.45, 16), hazardMat);
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.38, 0.5, 20), goldBrassMat);
     this.hookHead.add(collar);
 
     for (let i = 0; i < 3; i++) {
@@ -140,16 +187,17 @@ export class HookController {
       clawMount.rotation.y = (i * Math.PI * 2) / 3;
 
       const clawPivot = new THREE.Group();
-      clawPivot.position.set(0.18, -0.15, 0);
+      clawPivot.position.set(0.22, -0.18, 0);
       clawMount.add(clawPivot);
 
-      const upperArm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.52, 0.14), steelMat);
-      upperArm.position.set(0.08, -0.22, 0);
+      const upperArm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.62, 0.16), steelMat);
+      upperArm.position.set(0.1, -0.26, 0);
       upperArm.rotation.z = -0.35;
       clawPivot.add(upperArm);
 
-      const clawTip = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.42, 4), steelMat);
-      clawTip.position.set(0.24, -0.42, 0);
+      // Glowing High-Contrast Claw Tip
+      const clawTip = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.5, 4), clawTipMat);
+      clawTip.position.set(0.28, -0.5, 0);
       clawTip.rotation.z = -1.45;
       clawPivot.add(clawTip);
 
