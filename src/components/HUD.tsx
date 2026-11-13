@@ -17,7 +17,7 @@ export const HUD: React.FC<HUDProps> = ({
   onFinishEarly,
   onBackHome,
 }) => {
-  if (state.screen !== 'MINING' && state.screen !== 'PLAYING') return null;
+  if (state.screen !== 'PLAYING') return null;
 
   const targetPct = Math.min(100, Math.floor((state.walletGold / Math.max(1, state.targetScore)) * 100));
   const remainingSecs = Math.ceil(state.remainingTime);

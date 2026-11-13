@@ -240,7 +240,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({
             className="secondary-btn w-full sm:w-auto px-6 py-3 rounded-2xl font-display font-bold text-sm text-stone-200 uppercase flex items-center justify-center gap-2"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Trở Về Thị Trấn</span>
+            <span>Về Trang Chủ</span>
           </button>
 
           <button
@@ -248,7 +248,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({
             className="gold-btn w-full sm:flex-1 py-3.5 px-8 rounded-2xl font-display font-extrabold text-base text-stone-950 uppercase tracking-wider flex items-center justify-center gap-2"
           >
             <Play className="w-5 h-5 fill-stone-950" />
-            <span>ĐI RA MỎ ĐÀO VÀNG (MÀN {state.level})</span>
+            <span>VÀO CHƠI NGAY (MÀN {state.level})</span>
           </button>
         </div>
       </div>

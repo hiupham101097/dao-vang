@@ -36,70 +36,44 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     };
     window.addEventListener('resize', handleResize);
 
-    // Pointer events
+    // Pointer down (Click / Tap to drop hook; Right click to use dynamite)
     const handlePointerDown = (e: PointerEvent) => {
       if (!engineRef.current) return;
-      engineRef.current.handlePointerDown(e);
+      if (engineRef.current.state !== 'PLAYING') return;
+
+      if (e.button === 2) {
+        engineRef.current.tryUseDynamite();
+      } else {
+        engineRef.current.launchHook();
+      }
     };
 
     const containerEl = containerRef.current;
     containerEl.addEventListener('pointerdown', handlePointerDown);
 
+    // Context menu disable
     const handleContextMenu = (e: MouseEvent) => e.preventDefault();
     window.addEventListener('contextmenu', handleContextMenu);
 
-    // Key tracking for smooth exploration movement
-    const pressedKeys = new Set<string>();
-
-    const updateMovement = () => {
-      if (!engineRef.current) return;
-      let dx = 0;
-      let dz = 0;
-
-      if (pressedKeys.has('KeyA') || pressedKeys.has('ArrowLeft')) dx -= 1;
-      if (pressedKeys.has('KeyD') || pressedKeys.has('ArrowRight')) dx += 1;
-      if (pressedKeys.has('KeyW') || pressedKeys.has('ArrowUp')) dz += 1;
-      if (pressedKeys.has('KeyS') || pressedKeys.has('ArrowDown')) dz -= 1;
-
-      engineRef.current.setMoveInput(dx, dz);
-    };
-
+    // Keyboard bindings
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!engineRef.current) return;
+      if (engineRef.current.state !== 'PLAYING') return;
 
-      if (engineRef.current.state === 'MINING') {
-        if (e.code === 'Space' || e.code === 'ArrowDown' || e.code === 'KeyS') {
-          e.preventDefault();
-          engineRef.current.launchHook();
-        } else if (e.code === 'KeyE' || e.code === 'ArrowUp' || e.code === 'KeyW') {
-          e.preventDefault();
-          engineRef.current.tryUseDynamite();
-        }
-      } else {
-        // Exploration mode
-        pressedKeys.add(e.code);
-        updateMovement();
-
-        if (e.code === 'KeyE' || e.code === 'Enter' || e.code === 'Space') {
-          e.preventDefault();
-          engineRef.current.interactCurrentPrompt();
-        }
+      if (e.code === 'Space' || e.code === 'ArrowDown' || e.code === 'KeyS') {
+        e.preventDefault();
+        engineRef.current.launchHook();
+      } else if (e.code === 'KeyE' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+        e.preventDefault();
+        engineRef.current.tryUseDynamite();
       }
     };
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      pressedKeys.delete(e.code);
-      updateMovement();
-    };
-
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
 
     return () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
       containerEl.removeEventListener('pointerdown', handlePointerDown);
       engine.dispose();
       engineRef.current = null;
@@ -109,7 +83,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 w-full h-full z-0 cursor-crosshair overflow-hidden flex items-center justify-center bg-[#0a0705]"
+      className="absolute inset-0 w-full h-full z-0 cursor-crosshair overflow-hidden"
     />
   );
 };
+
